@@ -52,46 +52,6 @@ void ib_assertHarness(char const* file, uint32_t line, char const* func, bool te
 #define ib_max(lhs, rhs) (lhs > rhs ? lhs : rhs)
 #define ib_clamp(x, min, max) ib_max(ib_min(x, max), min)
 
-// Fixed Sized Queue (fsq)
-#define ib_fsq(ElemType, MaxSize) \
-    struct \
-    { \
-        ElemType Data[MaxSize]; \
-        uint32_t Count; \
-    }
-
-#define ib_fsqMaxSize(queue) ib_arrayCount((queue).Data)
-#define ib_fsqPush(queue) \
-        ( (queue)->Data + ib_fsqGrowImpl(&((queue)->Count), ib_arrayCount((queue)->Data)) )
-#define ib_fsqPop(queue) ib_fsqShrinkImpl(&((queue)->Count))
-#define ib_fsqClear(queue) ((queue)->Count = 0)
-#define ib_fsqPeek(queue) ((queue)->Data + ((queue)->Count - 1))
-
-inline void ib_fsqShrinkImpl(uint32_t* count)
-{
-    if(*count > 0)
-    {
-        (*count)--;
-    }
-    else
-    {
-        ib_assert(false);
-    }
-}
-
-inline uint32_t ib_fsqGrowImpl(uint32_t* count, uint32_t maxSize)
-{
-    if(*count < maxSize)
-    {
-        return (*count)++;
-    }
-    else
-    {
-        ib_assert(false);
-        return 0; // Stomp on first element. But don't write into other memory.
-    }
-}
-
 // Range
 #define ib_range(Type) \
     struct \
@@ -113,18 +73,6 @@ inline uint32_t ib_fsqGrowImpl(uint32_t* count, uint32_t maxSize)
         __VA_ARGS__, \
         1 \
     }
-
-#define ib_singleValueRange(...) \
-    { \
-        &__VA_ARGS__, \
-        1 \
-    }
-
-// Path utils
-
-char* ib_extractFilenameFromPath(char const* path);
-char* ib_concatenatePaths(char const* a, char const* b);
-void ib_splitPath(char const* path, char** outFolderPath, char** outFilename);
 
 uint32_t ib_firstBitHighU32(uint32_t value);
 uint32_t ib_firstBitLowU32(uint32_t value);

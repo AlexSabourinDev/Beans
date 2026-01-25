@@ -327,12 +327,14 @@ ibr_RenderGraph* ibr_beginFrame(ibr_RenderGraphPool* pool, ibr_BeginFrameDesc de
 
 		graph->SwapchainTextureIndex = prepareResult.SwapchainTextureIndex;
 		graph->SwapchainTexture = &desc.Surface->SwapchainTextures[graph->SwapchainTextureIndex];
+		graph->SwapchainAcquireSemaphore = desc.Surface->Framebuffers[desc.FrameIndex].AcquireSemaphore;
 		graph->ScreenExtent = (VkExtent2D) { graph->SwapchainTexture->Extent.width, graph->SwapchainTexture->Extent.height };
 	}
 	else
 	{
 		graph->ScreenExtent = (VkExtent2D) { 1, 1 };
 		graph->SwapchainTexture = NULL;
+		graph->SwapchainAcquireSemaphore = VK_NULL_HANDLE;
 	}
 
 	// Only reset our fence if we know we're going to signal it.
@@ -527,6 +529,67 @@ VkCommandBuffer ibr_allocTransientCommandBuffer(ibr_RenderGraph* graph, ib_Queue
 									   .Pool = graph->TransientCommandPools[queue]
 								   });
 	return commandBuffer;
+}
+
+void ibr_submitCommandBuffers(ibr_RenderGraph* graph, ibr_SubmitCommandBufferDesc desc)
+{
+	VkCommandBufferSubmitInfo* commands = (VkCommandBufferSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkCommandBufferSubmitInfo) * desc.CommandBuffers.Count);
+	for (uint32_t i = 0; i < desc.CommandBuffers.Count; i++)
+	{
+		commands[i] = (VkCommandBufferSubmitInfo)
+		{
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+			.commandBuffer = desc.CommandBuffers.Data[i],
+		};
+	}
+
+	VkSemaphoreSubmitInfo* waitSemaphores = (VkSemaphoreSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkSemaphoreSubmitInfo) * desc.WaitSemaphores.Count);
+	for (uint32_t i = 0; i < desc.WaitSemaphores.Count; i++)
+	{
+		waitSemaphores[i] = (VkSemaphoreSubmitInfo)
+		{
+			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+			.semaphore = desc.WaitSemaphores.Data[i],
+			.stageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+		};
+	}
+
+	VkSemaphoreSubmitInfo* signalSemaphores = (VkSemaphoreSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkSemaphoreSubmitInfo) * desc.SignalSemaphores.Count);
+	for (uint32_t i = 0; i < desc.SignalSemaphores.Count; i++)
+	{
+		signalSemaphores[i] = (VkSemaphoreSubmitInfo)
+		{
+			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+			.semaphore = desc.SignalSemaphores.Data[i],
+			.stageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+		};
+	}
+
+	VkSubmitInfo2 submitInfo = (VkSubmitInfo2)
+	{
+		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+		.pCommandBufferInfos = commands,
+		.commandBufferInfoCount = desc.CommandBuffers.Count,
+		.pWaitSemaphoreInfos = waitSemaphores,
+		.waitSemaphoreInfoCount = desc.WaitSemaphores.Count,
+		.pSignalSemaphoreInfos = signalSemaphores,
+		.signalSemaphoreInfoCount = desc.SignalSemaphores.Count
+	};
+	ib_vkCheck(vkQueueSubmit2(graph->Core->Queues[ib_Queue_Graphics].Queue, 1, &submitInfo, desc.SubmitFence));
+}
+
+void ibr_present(ibr_PresentDesc desc)
+{
+	ib_SurfaceState state = ib_presentSurface(desc.Graph->Core, (ib_PresentSurfaceDesc)
+							 {
+								 .Surface = desc.Surface,
+								 .SwapchainTextureIndex = desc.Graph->SwapchainTextureIndex,
+								 .WaitSemaphore = desc.Graph->FrameSemaphore
+							 });
+	if (state == ib_SurfaceState_ShouldRebuild)
+	{
+		ib_rebuildSurface(desc.Graph->Core, desc.Surface);
+	}
 }
 
 void ibr_beginGraphicsPass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_BeginGraphicsPassDesc desc)

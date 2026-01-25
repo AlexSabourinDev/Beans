@@ -74,6 +74,7 @@ typedef struct ibr_RenderGraph
     ibr_TransientCommandBuffer* TransientCommandBuffers[ib_Queue_Count];
     VkFence FrameFence;
     VkSemaphore FrameSemaphore;
+    VkSemaphore SwapchainAcquireSemaphore;
     uint32_t SwapchainTextureIndex;
     ib_Texture* SwapchainTexture;
     VkExtent2D ScreenExtent;
@@ -175,6 +176,23 @@ void ibr_allocPassResources(ibr_RenderGraph* graph, ibr_AllocPassResourcesDesc d
 VkImageView ibr_allocTransientImageView(ibr_RenderGraph* graph, ibr_AllocTransientImageViewDesc desc);
 ib_ShaderInput ibr_allocTransientShaderInput(ibr_RenderGraph* graph, ib_AllocShaderInputDesc desc);
 VkCommandBuffer ibr_allocTransientCommandBuffer(ibr_RenderGraph* graph, ib_Queue queue);
+
+typedef struct
+{
+    ib_Queue Queue;
+    ib_range(VkCommandBuffer) CommandBuffers;
+    ib_range(VkSemaphore) WaitSemaphores;
+    ib_range(VkSemaphore) SignalSemaphores;
+    VkFence SubmitFence;
+} ibr_SubmitCommandBufferDesc;
+void ibr_submitCommandBuffers(ibr_RenderGraph* graph, ibr_SubmitCommandBufferDesc desc);
+
+typedef struct
+{
+    ib_Surface* Surface;
+    ibr_RenderGraph* Graph;
+} ibr_PresentDesc;
+void ibr_present(ibr_PresentDesc desc);
 
 typedef struct
 {

@@ -38,10 +38,10 @@ static void kill(void)
 
 static void update(void)
 {
-    static uint32_t activeFrame = 0;
+    static uint32_t ActiveFrame = 0;
     ibr_RenderGraph* graph = ibr_beginFrame(&GraphPool, (ibr_BeginFrameDesc)
                    {
-                       .FrameIndex = activeFrame,
+                       .FrameIndex = ActiveFrame,
                        .Surface = &Surface
                    });
     if (graph != NULL)
@@ -57,14 +57,15 @@ static void update(void)
 
         ibr_beginGraphicsPass(graph, commands, (ibr_BeginGraphicsPassDesc)
                               {
-                                  .RenderTargets = ib_singleValueRange((ibr_RenderTargetState)
+                                  .RenderTargets = ib_singlePtrRange(&(ibr_RenderTargetState)
                                                                        {
                                                                            .Resource = &swapchainResource,
                                                                            .LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
                                                                            .StoreOp = VK_ATTACHMENT_STORE_OP_STORE,
-                                                                           .ClearValue = { .color = {1.0f, 0.0f, 1.0f, 1.0f} }
+                                                                           .ClearValue = { .color = {0.0f, 0.0f, 0.0f, 1.0f} }
                                                                        }),
                               });
+
         ibr_endGraphicsPass(graph, commands);
         ibr_barriers(graph, commands, (ibr_BarriersDesc)
                      {
@@ -75,29 +76,28 @@ static void update(void)
                      });
 
         ib_vkCheck(vkEndCommandBuffer(commands));
-        VkSubmitInfo submitInfo =
-        {
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .commandBufferCount = 1,
-            .pCommandBuffers = &commands,
-            .pSignalSemaphores = &graph->FrameSemaphore,
-            .signalSemaphoreCount = 1,
-            .pWaitSemaphores = &Surface.Framebuffers[activeFrame].AcquireSemaphore,
-            .waitSemaphoreCount = 1,
-            .pWaitDstStageMask = (VkPipelineStageFlags[]) { VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT }
-        };
-        ib_vkCheck(vkQueueSubmit(Core.Queues[ib_Queue_Graphics].Queue, 1, &submitInfo, graph->FrameFence));
+        ibr_submitCommandBuffers(graph, (ibr_SubmitCommandBufferDesc)
+                                 {
+                                     .Queue = ib_Queue_Graphics,
+                                     .CommandBuffers = ib_singlePtrRange(&commands),
+                                     .WaitSemaphores = ib_singlePtrRange(&graph->SwapchainAcquireSemaphore),
+                                     .SignalSemaphores = ib_singlePtrRange(&graph->FrameSemaphore),
+                                     .SubmitFence = graph->FrameFence
+                                 });
 
-        ib_SurfaceState surfaceState = ib_presentSurface(&Core, (ib_PresentSurfaceDesc)
-                      {
-                          .Surface = &Surface,
-                          .SwapchainTextureIndex = graph->SwapchainTextureIndex,
-                          .WaitSemaphore = graph->FrameSemaphore
-                      });
+        ibr_present((ibr_PresentDesc) { &Surface, graph });
         ibr_endFrame(&GraphPool, graph);
     }
 
-    activeFrame = (activeFrame + 1) % ib_FramebufferCount;
+    ActiveFrame = (ActiveFrame + 1) % ib_FramebufferCount;
+}
+
+void events(sapp_event const* event)
+{
+    if (event->type == SAPP_EVENTTYPE_RESIZED)
+    {
+        ib_rebuildSurface(&Core, &Surface);
+    }
 }
 
 sapp_desc sokol_main(int argc, char* argv[]) {
@@ -105,6 +105,7 @@ sapp_desc sokol_main(int argc, char* argv[]) {
         .init_cb = &init,
         .frame_cb = &update,
         .cleanup_cb = &kill,
+        .event_cb = &events,
         .win32.console_attach = true
     };
 }
