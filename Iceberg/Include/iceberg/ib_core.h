@@ -41,9 +41,9 @@ typedef struct
     VkDevice LogicalDevice;
     iba_StackAllocator StackAllocator;
 
-	VkCommandPool TransferCommandPool;
-	VkCommandBuffer TransientCommandBuffers[MaxTransientStagingCommandBuffers];
-	uint32_t ActiveCommandBuffers;
+    VkCommandPool TransferCommandPool;
+    VkCommandBuffer TransientCommandBuffers[MaxTransientStagingCommandBuffers];
+    uint32_t ActiveCommandBuffers;
     VkSemaphore TimelineSemaphore;
     uint64_t LastSemaphoreSignal;
 } ib_Staging;
@@ -90,7 +90,7 @@ enum
     ib_Sampler_LinearRepeat = 0,
     ib_Sampler_LinearClamp,
     ib_Sampler_CompareLess,
-	ib_Sampler_NearestClamp,
+    ib_Sampler_NearestClamp,
     ib_Sampler_Count
 };
 
@@ -145,8 +145,8 @@ typedef struct
 
     VkExtent3D Extent;
     VkFormat Format;
-	uint32_t MipCount;
-	uint32_t LayerCount;
+    uint32_t MipCount;
+    uint32_t LayerCount;
 } ib_Texture;
 
 typedef struct
@@ -155,10 +155,10 @@ typedef struct
     VkFormat Format;
     VkExtent3D Extent;
     VkImageAspectFlags Aspect;
-	uint32_t MipCount;
-	uint32_t LayerCount;
+    uint32_t MipCount;
+    uint32_t LayerCount;
     char const* DebugName;
-    struct 
+    struct
     {
         void const* Data;
         size_t Size;
@@ -181,11 +181,11 @@ void ib_writeToTexture(ib_Core* core, ib_WriteToTextureDesc desc);
 uint32_t ib_formatToSize(VkFormat format);
 inline size_t ib_textureSize(ib_Texture const* texture, uint32_t mip)
 {
-	// TODO: Store allocation size with texture instead.
-	return (size_t)(texture->Extent.width >> mip)
-		* (size_t)(texture->Extent.height >> mip)
-		* ib_formatToSize(texture->Format)
-		* (texture->LayerCount > 0 ? texture->LayerCount : 1);
+    // TODO: Store allocation size with texture instead.
+    return (size_t)(texture->Extent.width >> mip)
+        * (size_t)(texture->Extent.height >> mip)
+        * ib_formatToSize(texture->Format)
+        * (texture->LayerCount > 0 ? texture->LayerCount : 1);
 }
 
 typedef struct
@@ -209,7 +209,7 @@ typedef struct
     VkBuffer VulkanBuffer;
     VkDeviceAddress DeviceAddress;
     iba_GpuAllocation Allocation;
-	size_t Size;
+    size_t Size;
 } ib_Buffer;
 
 typedef struct
@@ -219,7 +219,7 @@ typedef struct
     VkMemoryPropertyFlags RequiredMemoryFlags;
     VkMemoryPropertyFlags PreferredMemoryFlags;
     char const* DebugName;
-    struct 
+    struct
     {
         void const* Data;
         size_t Size;
@@ -301,7 +301,7 @@ ib_SurfaceState ib_presentSurface(ib_Core* core, ib_PresentSurfaceDesc presentDe
 void ib_rebuildSurface(ib_Core* core, ib_Surface* surface);
 
 // Graphics pipeline
-typedef struct 
+typedef struct
 {
     uint32_t Index;
     VkShaderStageFlags Shaders;
@@ -328,16 +328,16 @@ void ib_freeShaderInputLayout(ib_Core* core, ib_ShaderInputLayout* layout);
 
 typedef struct
 {
-	ib_Texture const* Texture;
-	VkImageLayout Layout;
-	VkImageView View;
+    ib_Texture const* Texture;
+    VkImageLayout Layout;
+    VkImageView View;
 } ib_ShaderInputWriteTexture;
 
 typedef struct
 {
-	ib_Buffer const* Buffer;
-	size_t Offset;
-	size_t Size;
+    ib_Buffer const* Buffer;
+    size_t Offset;
+    size_t Size;
 } ib_ShaderInputWriteBuffer;
 
 
@@ -358,7 +358,7 @@ typedef struct
     VkDescriptorSet DescriptorSet;
 } ib_ShaderInput;
 
-typedef struct 
+typedef struct
 {
     ib_ShaderInputLayout const* Layout;
     ib_range(ib_ShaderInputWrite const) Inputs;
@@ -382,7 +382,7 @@ typedef struct
     char const* EntryPoint;
     void const* Code;
     size_t CodeSize;
-    VkShaderStageFlagBits Stage; 
+    VkShaderStageFlagBits Stage;
     uint32_t RequiredWaveSize;
 } ib_ShaderDesc;
 
@@ -400,8 +400,8 @@ typedef struct
 
 typedef struct
 {
-	ib_ShaderInputRange Inline;
-	ib_ShaderInputLayout const* External;
+    ib_ShaderInputRange Inline;
+    ib_ShaderInputLayout const* External;
 } ib_PipelineShaderInputDesc;
 
 #define ib_MaxShaderInputLayoutPerPipeline 4
@@ -425,7 +425,7 @@ typedef struct
     VkPipelineLayout Layout;
     VkPipeline VulkanPipeline;
     ib_ShaderInputLayout InlineShaderInputLayouts[ib_MaxShaderInputLayoutPerPipeline]; // Owned shader input layouts.
-	uint32_t InlineShaderInputLayoutCount;
+    uint32_t InlineShaderInputLayoutCount;
 } ib_GraphicsPipeline;
 
 ib_GraphicsPipeline ib_allocGraphicsPipeline(ib_Core* core, ib_GraphicsPipelineDesc desc);
@@ -434,36 +434,36 @@ void ib_freeGraphicsPipeline(ib_Core* core, ib_GraphicsPipeline* pipeline);
 // Allow for simpler reloading that's resilient to missing shader code.
 inline void ib_reloadGraphicsPipeline(ib_Core* core, ib_GraphicsPipeline* pipeline, ib_GraphicsPipelineDesc desc)
 {
-	bool allShadersValid = true;
-	for (uint32_t i = 0; i < desc.ShaderDescs.Count; i++)
-	{
-		if (desc.ShaderDescs.Data[i].Code == NULL)
-		{
-			allShadersValid = false;
-			break;
-		}
-	}
+    bool allShadersValid = true;
+    for (uint32_t i = 0; i < desc.ShaderDescs.Count; i++)
+    {
+        if (desc.ShaderDescs.Data[i].Code == NULL)
+        {
+            allShadersValid = false;
+            break;
+        }
+    }
 
-	if (allShadersValid)
-	{
-		ib_freeGraphicsPipeline(core, pipeline);
-		*pipeline = ib_allocGraphicsPipeline(core, desc);
-	}
+    if (allShadersValid)
+    {
+        ib_freeGraphicsPipeline(core, pipeline);
+        *pipeline = ib_allocGraphicsPipeline(core, desc);
+    }
 }
 
 typedef struct
 {
     ib_ShaderDesc ShaderDesc;
     ib_range(VkPushConstantRange const) PushConstants;
-	ib_PipelineShaderInputDesc ShaderInputs[ib_MaxShaderInputLayoutPerPipeline];
+    ib_PipelineShaderInputDesc ShaderInputs[ib_MaxShaderInputLayoutPerPipeline];
 } ib_ComputePipelineDesc;
 
 typedef struct
 {
     VkPipelineLayout Layout;
     VkPipeline VulkanPipeline;
-	ib_ShaderInputLayout InlineShaderInputLayouts[ib_MaxShaderInputLayoutPerPipeline]; // Owned shader input layouts.
-	uint32_t InlineShaderInputLayoutCount;
+    ib_ShaderInputLayout InlineShaderInputLayouts[ib_MaxShaderInputLayoutPerPipeline]; // Owned shader input layouts.
+    uint32_t InlineShaderInputLayoutCount;
 } ib_ComputePipeline;
 
 ib_ComputePipeline ib_allocComputePipeline(ib_Core* core, ib_ComputePipelineDesc desc);
@@ -472,11 +472,11 @@ void ib_freeComputePipeline(ib_Core* core, ib_ComputePipeline* pipeline);
 // Allow for simpler reloading that's resilient to missing shader code.
 inline void ib_reloadComputePipeline(ib_Core* core, ib_ComputePipeline* pipeline, ib_ComputePipelineDesc desc)
 {
-	if (desc.ShaderDesc.Code != NULL)
-	{
-		ib_freeComputePipeline(core, pipeline);
-		*pipeline = ib_allocComputePipeline(core, desc);
-	}
+    if (desc.ShaderDesc.Code != NULL)
+    {
+        ib_freeComputePipeline(core, pipeline);
+        *pipeline = ib_allocComputePipeline(core, desc);
+    }
 }
 
 // Utility
@@ -513,7 +513,7 @@ static double const ib_TimerQueryNotReady = -1.0f;
 double ib_queryTimer(ib_Core* core, ib_TimerManager* manager, ib_Timer const* timer, bool blocking);
 inline double ib_queryTimerBlocking(ib_Core* core, ib_TimerManager* manager, ib_Timer const* timer)
 {
-	return ib_queryTimer(core, manager, timer, true);
+    return ib_queryTimer(core, manager, timer, true);
 }
 
 typedef struct ib_Core
@@ -525,7 +525,7 @@ typedef struct ib_Core
 
     struct
     {
-		VkDescriptorPool Pool;
+        VkDescriptorPool Pool;
     } Descriptors;
     VkPipelineCache PipelineCache;
 
@@ -653,8 +653,8 @@ static VkPipelineColorBlendAttachmentState const ib_BlendDescAdditiveBlend =
 
 typedef struct
 {
-	ib_Core* Core;
-	uint32_t AccelerationStructureScratchBufferAlignment;
+    ib_Core* Core;
+    uint32_t AccelerationStructureScratchBufferAlignment;
 } ib_Raytracing;
 
 void ib_initRaytracing(ib_Core* core, ib_Raytracing* raytracing);
@@ -678,7 +678,7 @@ typedef struct
 } ib_RaytracePipeline;
 typedef struct
 {
-	ib_Buffer Buffer;
+    ib_Buffer Buffer;
     VkAccelerationStructureKHR AccelerationStructure;
     VkDeviceAddress Address;
 } ib_AccelerationStructureData;
@@ -686,7 +686,7 @@ typedef struct
 // BLAS and TLAS share memory layout but conceptually different.
 typedef struct
 {
-	ib_AccelerationStructureData Data;
+    ib_AccelerationStructureData Data;
 } ib_BLAS;
 
 typedef struct

@@ -55,18 +55,18 @@ static void update(void)
                                   .Texture = graph->SwapchainTexture,
                               });
 
-  //      ibr_beginGraphicsPass(graph, commands, (ibr_BeginGraphicsPassDesc)
-  //                            {
-  //                                .RenderTargets = ib_singlePtrRange(&(ibr_RenderTargetState)
-  //                                                                     {
-  //                                                                         .Resource = &swapchainResource,
-  //                                                                         .LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-  //                                                                         .StoreOp = VK_ATTACHMENT_STORE_OP_STORE,
-  //                                                                         .ClearValue = { .color = {0.0f, 0.0f, 0.0f, 1.0f} }
-  //                                                                     }),
-  //                            });
+        ibr_beginGraphicsPass(graph, commands, (ibr_BeginGraphicsPassDesc)
+                              {
+                                  .RenderTargets = ib_singlePtrRange(&(ibr_RenderTargetState)
+                                                                       {
+                                                                           .Resource = &swapchainResource,
+                                                                           .LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                                                           .StoreOp = VK_ATTACHMENT_STORE_OP_STORE,
+                                                                           .ClearValue = { .color = {0.0f, 0.0f, 0.0f, 1.0f} }
+                                                                       }),
+                              });
 
-  //      ibr_endGraphicsPass(graph, commands);
+        ibr_endGraphicsPass(graph, commands);
         ibr_barriers(graph, commands, (ibr_BarriersDesc)
                      {
                          .ResourceStates = ib_staticArrayRange((ibr_ResourceState[])
