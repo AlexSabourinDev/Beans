@@ -339,6 +339,8 @@ ibr_RenderGraph* ibr_beginFrame(ibr_RenderGraphPool* pool, ibr_BeginFrameDesc de
 	// If we made it this far, we're good to go.
 	ib_vkCheck(vkResetFences(graph->Core->LogicalDevice, 1, &graph->FrameFence));
 
+	iba_stackReset(&graph->FrameCPUStack);
+
 	// Convert our timers to timings from the previous frame
 	{
 		list_clear(&graph->PreviousFrameTimings);
@@ -483,11 +485,7 @@ ib_ShaderInput ibr_resourcesToShaderInput(ibr_RenderGraph* graph, ibr_ResourceTo
 {
 	ib_assert(desc.Resources.Count <= desc.ShaderInputs.Count); // Can't have more resources than inputs
 
-	// TODO: Can use a CPU stack allocator for this in the future.
-	#define maxShaderInputs 32
-	ib_ShaderInputWrite writes[maxShaderInputs];
-	ib_assert(desc.ShaderInputs.Count <= maxShaderInputs);
-	#undef maxShaderInputs
+	ib_ShaderInputWrite* writes = (ib_ShaderInputWrite*)ibr_allocTransientMemory(graph, desc.Resources.Count * sizeof(ib_ShaderInputWrite));
 
 	uint32_t writeCount = 0;
 	for (uint32_t i = 0; i < desc.Resources.Count; i++)
@@ -555,20 +553,17 @@ void ibr_beginGraphicsPass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_Begi
 		}
 
 		// Transition for write
-		#define maxBarrierCount 32
-		ib_assert(totalResourceCount < maxBarrierCount);
-		VkImageMemoryBarrier2 imageMemoryBarriers[maxBarrierCount];
-		VkBufferMemoryBarrier2 memoryBarriers[maxBarrierCount];
-		#undef maxBarrierCount
+		VkImageMemoryBarrier2* imageMemoryBarriers = (VkImageMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkImageMemoryBarrier2) * totalResourceCount);
+		VkBufferMemoryBarrier2* memoryBarriers = (VkBufferMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkBufferMemoryBarrier2) * totalResourceCount);
 
 		uint32_t imageBarrierCount;
 		uint32_t memoryBarrierCount;
 		createPipelineBarriers(graph->Core, (CreatePipelineBarriersDesc)
 							   {
 								   desc.OtherResourceStates,
-								   ib_staticArrayRange(imageMemoryBarriers),
+								   { imageMemoryBarriers, totalResourceCount },
 								   &imageBarrierCount,
-								   ib_staticArrayRange(memoryBarriers),
+								   { memoryBarriers, totalResourceCount },
 								   &memoryBarrierCount
 							   });
 
@@ -641,10 +636,7 @@ void ibr_beginGraphicsPass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_Begi
 
 	// Attachments
 	{
-		#define maxColorAttachments 16
-		VkRenderingAttachmentInfo colorAttachments[maxColorAttachments];
-		#undef maxColorAttachments
-
+		VkRenderingAttachmentInfo* colorAttachments = (VkRenderingAttachmentInfo*)ibr_allocTransientMemory(graph, sizeof(VkRenderingAttachmentInfo) * desc.RenderTargets.Count);
 		for (uint32_t i = 0; i < desc.RenderTargets.Count; i++)
 		{
 			ibr_RenderTargetState state = desc.RenderTargets.Data[i];
@@ -710,11 +702,8 @@ void ibr_endGraphicsPass(ibr_RenderGraph* graph, VkCommandBuffer cmd)
 
 void ibr_barriers(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_BarriersDesc desc)
 {
-	// TODO: Can use a CPU stack allocator for this.
-	#define maxBarrierCount 32
-	VkImageMemoryBarrier2 imageMemoryBarriers[maxBarrierCount];
-	VkBufferMemoryBarrier2 memoryBarriers[maxBarrierCount];
-	#undef maxImageBarrierCount
+	VkImageMemoryBarrier2* imageMemoryBarriers = (VkImageMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkImageMemoryBarrier2) * desc.ResourceStates.Count);
+	VkBufferMemoryBarrier2* memoryBarriers = (VkBufferMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkBufferMemoryBarrier2) * desc.ResourceStates.Count);
 
 	uint32_t imageBarrierCount;
 	uint32_t memoryBarrierCount;
@@ -722,9 +711,9 @@ void ibr_barriers(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_BarriersDesc 
 						   (CreatePipelineBarriersDesc)
 						   {
 							   desc.ResourceStates,
-							   ib_staticArrayRange(imageMemoryBarriers),
+							   { imageMemoryBarriers, desc.ResourceStates.Count },
 							   &imageBarrierCount,
-							   ib_staticArrayRange(memoryBarriers),
+							   { memoryBarriers, desc.ResourceStates.Count },
 							   &memoryBarrierCount
 						   });
 
@@ -753,11 +742,8 @@ void ibr_beginComputePass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_Begin
 
 	vkCmdBeginDebugUtilsLabelEXT(cmd, &passDebugLabelInfo);
 
-	// TODO: Can use a CPU stack allocator for this.
-	#define maxBarrierCount 32
-	VkImageMemoryBarrier2 imageMemoryBarriers[maxBarrierCount];
-	VkBufferMemoryBarrier2 memoryBarriers[maxBarrierCount];
-	#undef maxBarrierCount
+	VkImageMemoryBarrier2* imageMemoryBarriers = (VkImageMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkImageMemoryBarrier2) * desc.ResourceStates.Count);
+	VkBufferMemoryBarrier2* memoryBarriers = (VkBufferMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkBufferMemoryBarrier2) * desc.ResourceStates.Count);
 
 	uint32_t imageBarrierCount;
 	uint32_t memoryBarrierCount;
@@ -765,9 +751,9 @@ void ibr_beginComputePass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_Begin
 						   (CreatePipelineBarriersDesc)
 						   {
 							   desc.ResourceStates,
-							   ib_staticArrayRange(imageMemoryBarriers),
+							   { imageMemoryBarriers, desc.ResourceStates.Count },
 							   &imageBarrierCount,
-							   ib_staticArrayRange(memoryBarriers),
+							   { memoryBarriers, desc.ResourceStates.Count },
 							   &memoryBarrierCount
 						   });
 
