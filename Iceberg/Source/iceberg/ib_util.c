@@ -13,21 +13,21 @@ __declspec(dllimport) int __stdcall IsDebuggerPresent(void);
 __declspec(dllimport) void __stdcall DebugBreak(void);
 void ib_assertHarness(char const* file, uint32_t line, char const* func, bool test, ...)
 {
-	if(!test)
+	if (!test)
 	{
-        printf("[File: %s, Line: %u, Function: %s] Assert! ", file, line, func);
+		printf("[File: %s, Line: %u, Function: %s] Assert! ", file, line, func);
 
 		va_list args;
 		va_start (args, test);
-		char const* format = va_arg(args, char const*);
-		if(format != NULL)
+		char const* format = va_arg(args, char const *);
+		if (format != NULL)
 		{
 			vprintf(format, args);
 		}
-        printf("\n");
+		printf("\n");
 		va_end (args);
 
-		if(IsDebuggerPresent())
+		if (IsDebuggerPresent())
 		{
 			DebugBreak();
 		}
@@ -38,14 +38,14 @@ uint32_t ib_firstBitHighU32(uint32_t value)
 {
 	unsigned long index;
 	ib_check(_BitScanReverse(&index, value));
-    return index;
+	return index;
 }
 
 uint32_t ib_firstBitLowU32(uint32_t value)
 {
 	unsigned long index;
 	ib_check(_BitScanForward(&index, value));
-    return index;
+	return index;
 }
 
 uint32_t ib_bitCountU32(uint32_t value)

@@ -16,36 +16,37 @@
 #define iba_TlsfSecondLevelBitCount 5
 #define iba_TlsfFirstLevelBitCount (iba_TlsfSizeBitCount - iba_TlsfSecondLevelBitCount)
 #define iba_TlsfSecondLevelBlockCount (1 << iba_TlsfSecondLevelBitCount)
+#define iba_TlsfFreeListBlockCount ((iba_TlsfFirstLevelBitCount + 1) * iba_TlsfSecondLevelBlockCount)
 
 typedef struct iba_TlsfBlock
 {
-	uintptr_t RootUserData;
-	uint32_t Offset;
-	uint32_t Size;
-	bool Allocated;
+    uintptr_t RootUserData;
+    uint32_t Offset;
+    uint32_t Size;
+    bool Allocated;
 
-	// Address neighbour blocks
-	struct iba_TlsfBlock* LeftNeighbour;
-	struct iba_TlsfBlock* RightNeighbour;
+    // Address neighbour blocks
+    struct iba_TlsfBlock* LeftNeighbour;
+    struct iba_TlsfBlock* RightNeighbour;
 
-	// Free list Next
-	struct iba_TlsfBlock* NextFree;
-	struct iba_TlsfBlock* PrevFree;
+    // Free list Next
+    struct iba_TlsfBlock* NextFree;
+    struct iba_TlsfBlock* PrevFree;
 } iba_TlsfBlock;
 
 typedef struct
 {
-	uintptr_t RootUserData;
-	uint32_t Offset;
-	struct iba_TlsfBlock* Block;
+    uintptr_t RootUserData;
+    uint32_t Offset;
+    iba_TlsfBlock* Block;
 } iba_TlsfAllocation;
 
 typedef struct
 {
-	uint32_t FirstLevelBitMask;
-	uint32_t SecondLevelBitMasks[iba_TlsfFirstLevelBitCount + 1]; // Keep a mask for "denormals"
+    uint32_t FirstLevelBitMask;
+    uint32_t SecondLevelBitMasks[iba_TlsfFirstLevelBitCount + 1]; // Keep a mask for "denormals"
 
-	struct iba_TlsfBlock* FreeLists[iba_TlsfFirstLevelBitCount + 1][iba_TlsfSecondLevelBlockCount]; // Keep a list for "denormals"
+    iba_TlsfBlock** FreeLists; // Keep a list for "denormals"
 } iba_TlsfAllocator;
 
 void iba_initTlsfAllocator(iba_TlsfAllocator* allocator);
@@ -56,29 +57,28 @@ void iba_tlsfFree(iba_TlsfAllocator* allocator, iba_TlsfBlock* allocationBlock);
 
 // General GPU Allocator
 
-#define iba_MaxGpuAllocatorPools 10
-
-typedef struct
+typedef struct iba_GpuMemoryRoot
 {
-	VkDeviceMemory Memory;
-	void *Map;
+    VkDeviceMemory Memory;
+    void *Map;
 } iba_GpuMemoryRoot;
 
 #define iba_MaxGpuRootAllocations 16
-typedef struct
+typedef struct iba_GpuMemoryPool
 {
-	iba_TlsfAllocator TlsfAllocator;
-	iba_GpuMemoryRoot Roots[iba_MaxGpuRootAllocations];
-	uint32_t RootCount;
-
+    iba_TlsfAllocator TlsfAllocator;
+    iba_GpuMemoryRoot Roots[iba_MaxGpuRootAllocations];
+    uint32_t RootCount;
     uint32_t MemoryType;
+    struct iba_GpuMemoryPool* Next;
 } iba_GpuMemoryPool;
 
 typedef struct
 {
     VkPhysicalDevice PhysicalDevice;
     VkDevice LogicalDevice;
-    iba_GpuMemoryPool MemoryPools[iba_MaxGpuAllocatorPools];
+    uint32_t RootMemorySize;
+    iba_GpuMemoryPool* MemoryPools;
 } iba_GpuAllocator;
 
 typedef struct
@@ -106,6 +106,7 @@ typedef struct
 {
     VkPhysicalDevice PhysicalDevice;
     VkDevice LogicalDevice;
+    uint32_t MaxAllocationSize;
 } iba_GpuAllocatorDesc;
 
 void iba_initGpuAllocator(iba_GpuAllocatorDesc desc, iba_GpuAllocator *allocator);
@@ -119,19 +120,19 @@ void iba_gpuFree(iba_GpuAllocator *allocator, iba_GpuAllocation* allocation);
 // Pages must match this header
 typedef struct iba_PageHeader
 {
-	struct iba_PageHeader* NextPage;
+    struct iba_PageHeader* NextPage;
 } iba_PageHeader;
 
 typedef struct
 {
-	iba_PageHeader* (*AllocPage)(void* userData, size_t pageSize);
-	void (*FreePage)(void* userData, iba_PageHeader* page);
-	void* UserData;
+    iba_PageHeader* (*AllocPage)(void* userData, size_t pageSize);
+    void (*FreePage)(void* userData, iba_PageHeader* page);
+    void* UserData;
 } iba_PageAllocatorInterface;
 
 typedef struct
 {
-	iba_PageAllocatorInterface PageAllocator;
+    iba_PageAllocatorInterface PageAllocator;
 
     // Alloc Info
     size_t PageSize;
@@ -144,7 +145,7 @@ typedef struct
 
 typedef struct
 {
-	iba_PageAllocatorInterface PageAllocator;
+    iba_PageAllocatorInterface PageAllocator;
     size_t PageSize;
 } iba_StackAllocatorDesc;
 

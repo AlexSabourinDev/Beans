@@ -72,6 +72,7 @@ typedef struct ibr_RenderGraph
     VkDescriptorPool TransientDescriptorPool;
     VkCommandPool TransientCommandPools[ib_Queue_Count];
     ibr_TransientCommandBuffer* TransientCommandBuffers[ib_Queue_Count];
+    ibr_TransientCommandBuffer* ActiveCommandBuffer[ib_Queue_Count];
     VkFence FrameFence;
     VkSemaphore FrameSemaphore;
     VkSemaphore SwapchainAcquireSemaphore;

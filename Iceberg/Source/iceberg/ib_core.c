@@ -242,7 +242,7 @@ static void freeStagingMemoryPage(void* userData, iba_PageHeader* pageHeader)
 }
 
 // Staging
-uint32_t const ib_StagingPageSize = 256 * 1024 * 1024; // 256MB of staging space
+uint32_t const ib_StagingPageSize = 1024 * 1024; // 10MB of staging space
 void ib_initStaging(ib_StagingDesc desc, ib_Staging* outStaging)
 {
     *outStaging = (ib_Staging) { 0 };
@@ -731,7 +731,8 @@ void ib_initCore(ib_CoreDesc desc, ib_Core* outCore)
     iba_initGpuAllocator(
         (iba_GpuAllocatorDesc) {
         outCore->PhysicalDevice,
-        outCore->LogicalDevice
+        outCore->LogicalDevice,
+        1024 * 1024 * 100 // 100MB max allocation
     },
     &outCore->Allocator);
 

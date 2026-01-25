@@ -311,6 +311,13 @@ ibr_RenderGraph* ibr_beginFrame(ibr_RenderGraphPool* pool, ibr_BeginFrameDesc de
 	for (uint32_t q = 0; q < ib_Queue_Count; q++)
 	{
 		vkResetCommandPool(graph->Core->LogicalDevice, graph->TransientCommandPools[q], 0);
+		// TODO: Revisit later. We should simply track the previous list of active command buffers and grow that list as we go.
+		// For now, just free our previous command buffers every frame.
+		for (ibr_TransientCommandBuffer* iter = graph->TransientCommandBuffers[q]; iter != NULL; iter = iter->Next)
+		{
+			vkFreeCommandBuffers(graph->Core->LogicalDevice, graph->TransientCommandPools[q], 1, &iter->CommandBuffer);
+		}
+		list_clear(&graph->TransientCommandBuffers[q]);
 	}
 
 	if (desc.Surface != NULL)
@@ -521,14 +528,13 @@ VkCommandBuffer ibr_allocTransientCommandBuffer(ibr_RenderGraph* graph, ib_Queue
 {
 	ibr_TransientCommandBuffer* transientCommandBuffer;
 	list_pushAlloc(transientCommandBuffer, ibr_TransientCommandBuffer, &graph->TransientCommandBuffers[queue]);
-	VkCommandBuffer commandBuffer = transientCommandBuffer->CommandBuffer;
 	ib_allocCommandBuffers(graph->Core, (ib_AllocCommandBuffersDesc)
 								   {
-									   .OutCommandBuffers = ib_singlePtrRange(&commandBuffer),
+									   .OutCommandBuffers = ib_singlePtrRange(&transientCommandBuffer->CommandBuffer),
 									   .Queue = queue,
 									   .Pool = graph->TransientCommandPools[queue]
 								   });
-	return commandBuffer;
+	return transientCommandBuffer->CommandBuffer;
 }
 
 void ibr_submitCommandBuffers(ibr_RenderGraph* graph, ibr_SubmitCommandBufferDesc desc)
