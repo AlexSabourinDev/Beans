@@ -1,14 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
-    <ProjectConfiguration Include="Debug|Win32">
-      <Configuration>Debug</Configuration>
-      <Platform>Win32</Platform>
-    </ProjectConfiguration>
-    <ProjectConfiguration Include="Release|Win32">
-      <Configuration>Release</Configuration>
-      <Platform>Win32</Platform>
-    </ProjectConfiguration>
     <ProjectConfiguration Include="Debug|x64">
       <Configuration>Debug</Configuration>
       <Platform>x64</Platform>
@@ -26,19 +18,6 @@
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
-    <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
-    <CharacterSet>Unicode</CharacterSet>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
-    <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
-    <CharacterSet>Unicode</CharacterSet>
-  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
@@ -57,58 +36,26 @@
   </ImportGroup>
   <ImportGroup Label="Shared">
   </ImportGroup>
-  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\VulkanSDK.props" />
-    <Import Project="..\MSVC.props" />
-  </ImportGroup>
-  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\VulkanSDK.props" />
-    <Import Project="..\MSVC.props" />
-  </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="..\VulkanSDK.props" />
     <Import Project="..\MSVC.props" />
+    <Import Project="..\Sokol.props" />
+    <Import Project="..\Iceberg.props" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="..\VulkanSDK.props" />
     <Import Project="..\MSVC.props" />
+    <Import Project="..\Sokol.props" />
+    <Import Project="..\Iceberg.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
-    </ClCompile>
-    <Link>
-      <SubSystem>Console</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-    </Link>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
-      <FunctionLevelLinking>true</FunctionLevelLinking>
-      <IntrinsicFunctions>true</IntrinsicFunctions>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
-    </ClCompile>
-    <Link>
-      <SubSystem>Console</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-    </Link>
-  </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;IB_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
     </ClCompile>
     <Link>
@@ -131,18 +78,54 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\Iceberg\ib_allocator.c" />
-    <ClCompile Include="..\..\Iceberg\ib_core.c" />
-    <ClCompile Include="..\..\Iceberg\ib_rendergraph.c" />
-    <ClCompile Include="..\..\Iceberg\ib_util.c" />
+    <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_allocator.c" />
+    <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_core.c" />
+    <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_rendergraph.c" />
+    <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_util.c" />
     <ClCompile Include="main.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\Iceberg\ib_allocator.h" />
-    <ClInclude Include="..\..\Iceberg\ib_core.h" />
-    <ClInclude Include="..\..\Iceberg\ib_rendergraph.h" />
-    <ClInclude Include="..\..\Iceberg\ib_util.h" />
-    <ClInclude Include="..\..\Sokol\sokol_app.h" />
+    <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_allocator.h" />
+    <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_core.h" />
+    <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_rendergraph.h" />
+    <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_util.h" />
+    <ClInclude Include="..\..\Sokol\Include\sokol\sokol_app.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vk_enum_string_helper.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vk_icd.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vk_layer.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vk_platform.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan.hpp" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_android.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_beta.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_core.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_directfb.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_enums.hpp" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_extension_inspection.hpp" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_format_traits.hpp" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_fuchsia.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_funcs.hpp" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_ggp.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_handles.hpp" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_hash.hpp" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_hpp_macros.hpp" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_ios.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_macos.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_metal.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_profiles.hpp" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_raii.hpp" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_screen.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_shared.hpp" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_static_assertions.hpp" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_structs.hpp" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_to_string.hpp" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_vi.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_video.hpp" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_wayland.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_win32.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_xcb.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_xlib.h" />
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_xlib_xrandr.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

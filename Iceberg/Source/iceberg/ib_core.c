@@ -1,6 +1,6 @@
 // Copyright (c) 2019 Cranberry King; 2025 Snowed In Studios Inc.
 
-#include "ib_core.h"
+#include <iceberg/ib_core.h>
 
 // #define VK_USE_PLATFORM_WIN32_KHR
 // Don't include Windows.h in our vulkan header.
@@ -961,6 +961,17 @@ void ib_freeCommandBuffer(ib_Core* core, ib_Queue queue, VkCommandBuffer command
 void ib_freeCommandBuffers(ib_Core* core, ib_Queue queue, uint32_t count, VkCommandBuffer* commands)
 {
     vkFreeCommandBuffers(core->LogicalDevice, core->Queues[queue].CommandPool, count, commands);
+}
+
+void ib_beginCommandBuffer(ib_Core* core, VkCommandBuffer commandBuffer)
+{
+    ib_unused(core);
+    ib_vkCheck(vkBeginCommandBuffer(commandBuffer,
+                                    &(VkCommandBufferBeginInfo)
+                                    {
+                                        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                                        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+                                    }));
 }
 
 VkCommandBuffer ib_allocAndBeginCommandBuffer(ib_Core* core, ib_Queue queue)

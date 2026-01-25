@@ -131,6 +131,7 @@ void ib_freeCommandBuffer(ib_Core* core, ib_Queue queue, VkCommandBuffer command
 void ib_freeCommandBuffers(ib_Core* core, ib_Queue queue, uint32_t commandCount, VkCommandBuffer* commands);
 
 // Utility command buffers
+void ib_beginCommandBuffer(ib_Core* core, VkCommandBuffer commandBuffer);
 VkCommandBuffer ib_allocAndBeginCommandBuffer(ib_Core* core, ib_Queue queue);
 void ib_endAndSubmitCommandBuffer(ib_Core* core, VkCommandBuffer commandBuffer, ib_Queue queue);
 

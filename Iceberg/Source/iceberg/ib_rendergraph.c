@@ -1,6 +1,6 @@
 // Copyright (c) 2019 Cranberry King; 2025 Snowed In Studios Inc.
 
-#include "ib_rendergraph.h"
+#include <iceberg/ib_rendergraph.h>
 #include <string.h>
 #include <stdlib.h>
 

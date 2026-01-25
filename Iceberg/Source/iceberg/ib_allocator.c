@@ -1,6 +1,6 @@
 // Copyright (c) 2019 Cranberry King; 2025 Snowed In Studios Inc.
 
-#include "ib_allocator.h"
+#include <iceberg/ib_allocator.h>
 #include <stdlib.h>
 #include <string.h>
 

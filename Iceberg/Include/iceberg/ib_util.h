@@ -114,9 +114,13 @@ inline uint32_t ib_fsqGrowImpl(uint32_t* count, uint32_t maxSize)
         1 \
     }
 
-// Path utils
+#define ib_singleValueRange(...) \
+    { \
+        &__VA_ARGS__, \
+        1 \
+    }
 
-extern char const* ib_IcebergWorkingDirectory;
+// Path utils
 
 char* ib_extractFilenameFromPath(char const* path);
 char* ib_concatenatePaths(char const* a, char const* b);

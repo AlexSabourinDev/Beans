@@ -1,6 +1,6 @@
 // Copyright (c) 2019 Cranberry King; 2025 Snowed In Studios Inc.
 
-#include "ib_util.h"
+#include <iceberg/ib_util.h>
 
 #include <stdio.h>
 #include <assert.h>
@@ -33,8 +33,6 @@ void ib_assertHarness(char const* file, uint32_t line, char const* func, bool te
 		}
 	}
 }
-
-char const* ib_IcebergWorkingDirectory = "";
 
 char* ib_extractFilenameFromPath(char const* path)
 {

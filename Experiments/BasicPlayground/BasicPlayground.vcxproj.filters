@@ -1,43 +1,154 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClCompile Include="..\..\Iceberg\ib_allocator.c">
-      <Filter>Iceberg</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\Iceberg\ib_core.c">
-      <Filter>Iceberg</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\Iceberg\ib_rendergraph.c">
-      <Filter>Iceberg</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\Iceberg\ib_util.c">
-      <Filter>Iceberg</Filter>
-    </ClCompile>
     <ClCompile Include="main.c" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="..\..\Iceberg\ib_allocator.h">
+    <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_allocator.c">
       <Filter>Iceberg</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\Iceberg\ib_core.h">
+    </ClCompile>
+    <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_core.c">
       <Filter>Iceberg</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\Iceberg\ib_rendergraph.h">
+    </ClCompile>
+    <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_rendergraph.c">
       <Filter>Iceberg</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\Iceberg\ib_util.h">
+    </ClCompile>
+    <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_util.c">
       <Filter>Iceberg</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\Sokol\sokol_app.h">
-      <Filter>Sokol</Filter>
-    </ClInclude>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Iceberg">
       <UniqueIdentifier>{eb91a002-ca87-4e6b-9fdf-d9dd53e43dfd}</UniqueIdentifier>
     </Filter>
     <Filter Include="Sokol">
-      <UniqueIdentifier>{d58b3497-182c-4de5-8674-e133a1030d7e}</UniqueIdentifier>
+      <UniqueIdentifier>{7502d498-0321-4ecd-af13-5f40fd364966}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Vulkan">
+      <UniqueIdentifier>{f33b9ac3-1d7f-4e9d-9734-b15b73143fc7}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_allocator.h">
+      <Filter>Iceberg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_core.h">
+      <Filter>Iceberg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_rendergraph.h">
+      <Filter>Iceberg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_util.h">
+      <Filter>Iceberg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Sokol\Include\sokol\sokol_app.h">
+      <Filter>Sokol</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vk_enum_string_helper.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vk_icd.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vk_layer.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vk_platform.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan.hpp">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_android.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_beta.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_core.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_directfb.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_enums.hpp">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_extension_inspection.hpp">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_format_traits.hpp">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_fuchsia.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_funcs.hpp">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_ggp.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_handles.hpp">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_hash.hpp">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_hpp_macros.hpp">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_ios.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_macos.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_metal.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_profiles.hpp">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_raii.hpp">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_screen.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_shared.hpp">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_static_assertions.hpp">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_structs.hpp">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_to_string.hpp">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_vi.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_video.hpp">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_wayland.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_win32.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_xcb.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_xlib.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_xlib_xrandr.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
