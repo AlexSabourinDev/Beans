@@ -50,36 +50,44 @@ static void update(void)
         VkCommandBuffer commands = ibr_allocTransientCommandBuffer(graph, ib_Queue_Graphics);
         ib_beginCommandBuffer(&Core, commands);
 
-        ibr_Resource swapchainResource = ibr_allocPassResource(graph, (ibr_ResourceDesc)
-                              {
-                                  .Type = ibr_ResourceType_Texture,
-                                  .Texture = graph->SwapchainTexture,
-                              });
+        ibr_Resource swapchainResource; 
+        ibr_allocPassResources(graph, (ibr_AllocPassResourcesDesc)
+                               {
+                                   .ResourceBindings = (ibr_AllocResourceBinding)
+                                   {
+                                       .OutResource = &swapchainResource,
+                                       .Desc =
+                                       {
+                                           .Type = ibr_ResourceType_Texture,
+                                           .Texture = graph->SwapchainTexture,
+                                       }
+                                   }
+                               });
 
         ibr_beginGraphicsPass(graph, commands, (ibr_BeginGraphicsPassDesc)
                               {
-                                  .RenderTargets = ib_singlePtrRange(&(ibr_RenderTargetState)
-                                                                       {
-                                                                           .Resource = &swapchainResource,
-                                                                           .LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                                                           .StoreOp = VK_ATTACHMENT_STORE_OP_STORE,
-                                                                           .ClearValue = { .color = {0.0f, 0.0f, 0.0f, 1.0f} }
-                                                                       }),
+                                  .RenderTargets = (ibr_RenderTargetState)
+                                  {
+                                      .Resource = &swapchainResource,
+                                      .LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                      .StoreOp = VK_ATTACHMENT_STORE_OP_STORE,
+                                      .ClearValue = { .color = { 0.0f, 0.0f, 0.0f, 1.0f } }
+                                  }
                               });
 
         ibr_endGraphicsPass(graph, commands);
         ibr_barriers(graph, commands, (ibr_BarriersDesc)
                      {
-                         .ResourceStates = { ibr_textureToPresentState(&swapchainResource) }
+                         ibr_textureToPresentState(&swapchainResource)
                      });
 
         ib_vkCheck(vkEndCommandBuffer(commands));
         ibr_submitCommandBuffers(graph, (ibr_SubmitCommandBufferDesc)
                                  {
                                      .Queue = ib_Queue_Graphics,
-                                     .CommandBuffers = ib_singlePtrRange(&commands),
-                                     .WaitSemaphores = ib_singlePtrRange(&graph->SwapchainAcquireSemaphore),
-                                     .SignalSemaphores = ib_singlePtrRange(&graph->FrameSemaphore),
+                                     .CommandBuffers = commands,
+                                     .WaitSemaphores = graph->SwapchainAcquireSemaphore,
+                                     .SignalSemaphores = graph->FrameSemaphore,
                                      .SubmitFence = graph->FrameFence
                                  });
 

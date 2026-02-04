@@ -162,7 +162,7 @@ typedef struct
 
 typedef struct
 {
-    ib_range(ibr_AllocResourceBinding) ResourceBindings;
+    ib_srange(ibr_AllocResourceBinding, 8) ResourceBindings;
 } ibr_AllocPassResourcesDesc;
 
 typedef struct
@@ -181,9 +181,9 @@ VkCommandBuffer ibr_allocTransientCommandBuffer(ibr_RenderGraph* graph, ib_Queue
 typedef struct
 {
     ib_Queue Queue;
-    ib_range(VkCommandBuffer) CommandBuffers;
-    ib_range(VkSemaphore) WaitSemaphores;
-    ib_range(VkSemaphore) SignalSemaphores;
+    ib_srange(VkCommandBuffer, 1) CommandBuffers;
+    ib_srange(VkSemaphore, 1) WaitSemaphores;
+    ib_srange(VkSemaphore, 1) SignalSemaphores;
     VkFence SubmitFence;
 } ibr_SubmitCommandBufferDesc;
 void ibr_submitCommandBuffers(ibr_RenderGraph* graph, ibr_SubmitCommandBufferDesc desc);
@@ -243,7 +243,7 @@ typedef struct
 
 typedef struct
 {
-    ib_range(ibr_RenderTargetState) RenderTargets; // Rendertargets will be appropriately transitioned
+    ib_srange(ibr_RenderTargetState, 4) RenderTargets; // Rendertargets will be appropriately transitioned
     ibr_RenderTargetState DepthTarget;
 
     ibr_ResourceStateRange OtherResourceStates; // Other resources that aren't included in our rendertargets.

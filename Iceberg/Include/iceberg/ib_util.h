@@ -65,7 +65,10 @@ void ib_assertHarness(char const* file, uint32_t line, char const* func, bool te
     (range.Data != NULL ? range.Data : &range.Array[0])
 
 #define ib_srangeEnd(range) \
-    (range.Data != NULL ? (range.Data + range.Count) : (&range.Array[0] + ib_arrayCount(range.Array)))
+    (range.Data != NULL ? (range.Data + range.Count) : (&range.Array[ib_arrayCount(range.Array)]))
+
+#define ib_srangeCapacity(range) \
+    (range.Data != NULL ? range.Count : ib_arrayCount(range.Array))
 
 #define ib_range(Type) \
     struct \

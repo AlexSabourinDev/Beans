@@ -507,11 +507,23 @@ ibr_Resource ibr_allocPassResource(ibr_RenderGraph* graph, ibr_ResourceDesc reso
 
 void ibr_allocPassResources(ibr_RenderGraph* graph, ibr_AllocPassResourcesDesc desc)
 {
-	for (uint32_t i = 0; i < desc.ResourceBindings.Count; i++)
+	ibr_AllocResourceBinding* iter = ib_srangeBegin(desc.ResourceBindings);
+	ibr_AllocResourceBinding* end = ib_srangeEnd(desc.ResourceBindings);
+	for (; iter != end; iter++)
 	{
-		ibr_ResourceDesc resourceDesc = desc.ResourceBindings.Data[i].Desc;
-		ibr_Resource* outResource = desc.ResourceBindings.Data[i].OutResource;
+		if(iter->OutResource == NULL)
+		{
+			break;
+		}
+
+		ibr_ResourceDesc resourceDesc = iter->Desc;
+		ibr_Resource* outResource = iter->OutResource;
 		*outResource = ibr_allocPassResource(graph, resourceDesc);
+	}
+
+	for (; iter != end; iter++)
+	{
+		ib_assert(iter->OutResource == NULL);
 	}
 }
 
@@ -600,34 +612,58 @@ VkCommandBuffer ibr_allocTransientCommandBuffer(ibr_RenderGraph* graph, ib_Queue
 
 void ibr_submitCommandBuffers(ibr_RenderGraph* graph, ibr_SubmitCommandBufferDesc desc)
 {
-	VkCommandBufferSubmitInfo* commands = (VkCommandBufferSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkCommandBufferSubmitInfo) * desc.CommandBuffers.Count);
-	for (uint32_t i = 0; i < desc.CommandBuffers.Count; i++)
+	uint32_t maxCommandCount = ib_srangeCapacity(desc.CommandBuffers);
+	VkCommandBufferSubmitInfo* commands = (VkCommandBufferSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkCommandBufferSubmitInfo) * maxCommandCount);
+	uint32_t commandCount = 0;
+	for (VkCommandBuffer* iter = ib_srangeBegin(desc.CommandBuffers),
+		*end = ib_srangeEnd(desc.CommandBuffers); iter != end; iter++)
 	{
-		commands[i] = (VkCommandBufferSubmitInfo)
+		if (*iter == VK_NULL_HANDLE)
+		{
+			break;
+		}
+
+		commands[commandCount++] = (VkCommandBufferSubmitInfo)
 		{
 			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-			.commandBuffer = desc.CommandBuffers.Data[i],
+			.commandBuffer = *iter,
 		};
 	}
 
-	VkSemaphoreSubmitInfo* waitSemaphores = (VkSemaphoreSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkSemaphoreSubmitInfo) * desc.WaitSemaphores.Count);
-	for (uint32_t i = 0; i < desc.WaitSemaphores.Count; i++)
+	uint32_t maxWaitSemaphores = ib_srangeCapacity(desc.WaitSemaphores);
+	VkSemaphoreSubmitInfo* waitSemaphores = (VkSemaphoreSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkSemaphoreSubmitInfo) * maxWaitSemaphores);
+	uint32_t waitSemaphoreCount = 0;
+	for (VkSemaphore* iter = ib_srangeBegin(desc.WaitSemaphores),
+		*end = ib_srangeEnd(desc.WaitSemaphores); iter != end; iter++)
 	{
-		waitSemaphores[i] = (VkSemaphoreSubmitInfo)
+		if (*iter == VK_NULL_HANDLE)
+		{
+			break;
+		}
+
+		waitSemaphores[waitSemaphoreCount++] = (VkSemaphoreSubmitInfo)
 		{
 			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-			.semaphore = desc.WaitSemaphores.Data[i],
+			.semaphore = *iter,
 			.stageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
 		};
 	}
 
-	VkSemaphoreSubmitInfo* signalSemaphores = (VkSemaphoreSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkSemaphoreSubmitInfo) * desc.SignalSemaphores.Count);
-	for (uint32_t i = 0; i < desc.SignalSemaphores.Count; i++)
+	uint32_t maxSignalSemaphores = ib_srangeCapacity(desc.SignalSemaphores);
+	VkSemaphoreSubmitInfo* signalSemaphores = (VkSemaphoreSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkSemaphoreSubmitInfo) * maxSignalSemaphores);
+	uint32_t signalSemaphoreCount = 0;
+	for (VkSemaphore* iter = ib_srangeBegin(desc.SignalSemaphores),
+		*end = ib_srangeEnd(desc.SignalSemaphores); iter != end; iter++)
 	{
-		signalSemaphores[i] = (VkSemaphoreSubmitInfo)
+		if (*iter == VK_NULL_HANDLE)
+		{
+			break;
+		}
+
+		signalSemaphores[signalSemaphoreCount++] = (VkSemaphoreSubmitInfo)
 		{
 			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-			.semaphore = desc.SignalSemaphores.Data[i],
+			.semaphore = *iter,
 			.stageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
 		};
 	}
@@ -636,11 +672,11 @@ void ibr_submitCommandBuffers(ibr_RenderGraph* graph, ibr_SubmitCommandBufferDes
 	{
 		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
 		.pCommandBufferInfos = commands,
-		.commandBufferInfoCount = desc.CommandBuffers.Count,
+		.commandBufferInfoCount = commandCount,
 		.pWaitSemaphoreInfos = waitSemaphores,
-		.waitSemaphoreInfoCount = desc.WaitSemaphores.Count,
+		.waitSemaphoreInfoCount = waitSemaphoreCount,
 		.pSignalSemaphoreInfos = signalSemaphores,
-		.signalSemaphoreInfoCount = desc.SignalSemaphores.Count
+		.signalSemaphoreInfoCount = signalSemaphoreCount
 	};
 	ib_vkCheck(vkQueueSubmit2(graph->Core->Queues[ib_Queue_Graphics].Queue, 1, &submitInfo, desc.SubmitFence));
 }
@@ -675,8 +711,9 @@ void ibr_beginGraphicsPass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_Begi
 	vkCmdBeginDebugUtilsLabelEXT(cmd, &passDebugLabelInfo);
 
 	// Barriers
+	uint32_t renderTargetCount = 0;
 	{
-		uint32_t totalResourceCount = desc.RenderTargets.Count + desc.OtherResourceStates.Count;
+		uint32_t totalResourceCount = ib_srangeCapacity(desc.RenderTargets) + ib_srangeCapacity(desc.OtherResourceStates);
 		if (desc.DepthTarget.Resource != NULL)
 		{
 			totalResourceCount++;
@@ -697,12 +734,20 @@ void ibr_beginGraphicsPass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_Begi
 								&memoryBarrierCount
 							});
 
-		for (uint32_t i = 0; i < desc.RenderTargets.Count; i++)
+		for (ibr_RenderTargetState* iter = ib_srangeBegin(desc.RenderTargets),
+			*end = ib_srangeEnd(desc.RenderTargets); iter != end; iter++)
 		{
-			ibr_RenderTargetState state = desc.RenderTargets.Data[i];
+			if (iter->Resource == NULL)
+			{
+				break;
+			}
+
+			renderTargetCount++;
+
+			ibr_RenderTargetState state = *iter;
 
 			ib_assert(state.Resource->Type == ibr_ResourceType_Texture);
-			imageMemoryBarriers[imageBarrierCount + i] = ib_createTextureBarrier(graph->Core, (ib_TextureBarrierDesc)
+			imageMemoryBarriers[imageBarrierCount++] = ib_createTextureBarrier(graph->Core, (ib_TextureBarrierDesc)
 																				{
 																					.Texture = state.Resource->Texture,
 																					.OldLayout = state.Resource->TextureLayout,
@@ -718,7 +763,6 @@ void ibr_beginGraphicsPass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_Begi
 			state.Resource->LastReleaseStageMask = state.ReleaseStageMask != VK_PIPELINE_STAGE_NONE ? state.ReleaseStageMask : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 			state.Resource->TextureLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 		}
-		imageBarrierCount += desc.RenderTargets.Count;
 
 		// Depth Target
 		if (desc.DepthTarget.Resource != NULL)
@@ -726,7 +770,7 @@ void ibr_beginGraphicsPass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_Begi
 			ibr_RenderTargetState state = desc.DepthTarget;
 
 			ib_assert(state.Resource->Type == ibr_ResourceType_Texture);
-			imageMemoryBarriers[imageBarrierCount] = ib_createTextureBarrier(graph->Core, (ib_TextureBarrierDesc)
+			imageMemoryBarriers[imageBarrierCount++] = ib_createTextureBarrier(graph->Core, (ib_TextureBarrierDesc)
 																			{
 																				.Texture = state.Resource->Texture,
 																				.OldLayout = state.Resource->TextureLayout,
@@ -741,7 +785,6 @@ void ibr_beginGraphicsPass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_Begi
 			state.Resource->LastReleaseAccessMask = state.ReleaseAccessMask != VK_ACCESS_NONE ? state.ReleaseAccessMask : VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 			state.Resource->LastReleaseStageMask = state.ReleaseStageMask != VK_PIPELINE_STAGE_NONE ? state.ReleaseStageMask : VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
 			state.Resource->TextureLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-			imageBarrierCount++;
 		}
 
 		vkCmdPipelineBarrier2(cmd, &(VkDependencyInfo)
@@ -754,10 +797,11 @@ void ibr_beginGraphicsPass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_Begi
 							});
 	}
 
+	ibr_RenderTargetState* renderTargetBegin = ib_srangeBegin(desc.RenderTargets);
 	VkExtent2D extents = { 0 };
-	if (desc.RenderTargets.Count > 0)
+	if (renderTargetBegin->Resource != NULL)
 	{
-		extents = (VkExtent2D) { desc.RenderTargets.Data[0].Resource->Texture->Extent.width, desc.RenderTargets.Data[0].Resource->Texture->Extent.height };
+		extents = (VkExtent2D) { renderTargetBegin->Resource->Texture->Extent.width, renderTargetBegin->Resource->Texture->Extent.height };
 	}
 	else
 	{
@@ -766,11 +810,13 @@ void ibr_beginGraphicsPass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_Begi
 
 	// Attachments
 	{
-		VkRenderingAttachmentInfo* colorAttachments = (VkRenderingAttachmentInfo*)ibr_allocTransientMemory(graph, sizeof(VkRenderingAttachmentInfo) * desc.RenderTargets.Count);
-		for (uint32_t i = 0; i < desc.RenderTargets.Count; i++)
+		uint32_t colorAttachmentWrite = 0;
+		VkRenderingAttachmentInfo* colorAttachments = (VkRenderingAttachmentInfo*)ibr_allocTransientMemory(graph, sizeof(VkRenderingAttachmentInfo) * renderTargetCount);
+		for (ibr_RenderTargetState* iter = renderTargetBegin,
+			*end = renderTargetBegin + renderTargetCount; iter != end; iter++)
 		{
-			ibr_RenderTargetState state = desc.RenderTargets.Data[i];
-			colorAttachments[i] = (VkRenderingAttachmentInfo)
+			ibr_RenderTargetState state = *iter;
+			colorAttachments[colorAttachmentWrite++] = (VkRenderingAttachmentInfo)
 			{
 				.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
 				.imageView = state.Resource->Texture->View,
@@ -800,7 +846,7 @@ void ibr_beginGraphicsPass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_Begi
 			.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
 			.renderArea = { .extent = extents },
 			.layerCount = 1,
-			.colorAttachmentCount = desc.RenderTargets.Count,
+			.colorAttachmentCount = renderTargetCount,
 			.pColorAttachments = colorAttachments,
 			.pDepthAttachment = (desc.DepthTarget.Resource != NULL) ? &depthAttachment : NULL
 		};
