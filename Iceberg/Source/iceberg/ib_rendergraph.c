@@ -24,15 +24,6 @@
 		out = _transient; \
 	}
 
-typedef struct
-{
-	ibr_ResourceStateRange States;
-	ib_range(VkImageMemoryBarrier2) OutImageBarriers;
-	uint32_t* OutImageBarrierCount;
-	ib_range(VkBufferMemoryBarrier2) OutMemoryBarriers;
-	uint32_t* OutMemoryBarrierCount;
-} CreatePipelineBarriersDesc;
-
 static void pushProfilingScope(ibr_RenderGraph* graph, VkCommandBuffer cmd, char const* passName)
 {
 	ibr_TransientProfileScope* transientScope;
@@ -80,14 +71,82 @@ static void getAcquireAndReleaseMask(ibr_ResourceState state, VkPipelineStageFla
 	}
 }
 
-static void createPipelineBarriers(ib_Core* core, CreatePipelineBarriersDesc desc)
+typedef struct
+{
+	ibr_ResourceStateRange States;
+	VkImageMemoryBarrier2** OutImageBarriers;
+	uint32_t* OutImageBarrierCount;
+	VkBufferMemoryBarrier2** OutMemoryBarriers;
+	uint32_t* OutMemoryBarrierCount;
+} CreatePipelineBarriersDesc;
+
+static void createPipelineBarriers(ibr_RenderGraph* graph, CreatePipelineBarriersDesc desc)
 {
 	uint32_t imageBarrierCount = 0;
 	uint32_t memoryBarrierCount = 0;
 
-	for (uint32_t i = 0; i < desc.States.Count; i++)
+	ibr_ResourceState* stateBegin = ib_srangeBegin(desc.States);
+	ibr_ResourceState* stateEnd = ib_srangeEnd(desc.States);
+
 	{
-		ibr_ResourceState state = desc.States.Data[i];
+		ibr_ResourceState *iter = stateBegin;
+		for (; iter != stateEnd; iter++)
+		{
+			// List terminates on first null resource.
+			if (iter->Resource == NULL)
+			{
+				break;
+			}
+
+			if (iter->Resource->Type == ibr_ResourceType_Texture)
+			{
+				imageBarrierCount++;
+			}
+			else if (iter->Resource->Type == ibr_ResourceType_Buffer)
+			{
+				memoryBarrierCount++;
+			}
+		}
+
+		for (; iter != stateEnd; iter++)
+		{
+			// Make sure no extra resources after the first null.
+			ib_assert(iter->Resource == NULL);
+		}
+	}
+
+	VkImageMemoryBarrier2* imageBarriers = *desc.OutImageBarriers;
+	if (imageBarriers == NULL)
+	{
+		imageBarriers = (VkImageMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkImageMemoryBarrier2) * imageBarrierCount);
+	}
+	else
+	{
+		// API must have set OutImageBarrierCount if passing a preallocated array.
+		ib_assert(imageBarrierCount <= *desc.OutImageBarrierCount);
+	}
+
+	VkBufferMemoryBarrier2* memoryBarriers = *desc.OutMemoryBarriers;
+	if (memoryBarriers == NULL)
+	{
+		memoryBarriers = (VkBufferMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkBufferMemoryBarrier2) * memoryBarrierCount);
+	}
+	else
+	{
+		// API must have set OutImageBarrierCount if passing a preallocated array.
+		ib_assert(memoryBarrierCount <= *desc.OutMemoryBarrierCount);
+	}
+
+	uint32_t imageBarrierWrite = 0;
+	uint32_t memoryBarrierWrite = 0;
+	for (ibr_ResourceState *iter = stateBegin; iter != stateEnd; iter++)
+	{
+		if (iter->Resource == NULL)
+		{
+			break;
+		}
+
+		ibr_ResourceState state = *iter;
 
 		VkPipelineStageFlags acquireStageMask;
 		VkPipelineStageFlags releaseStageMask;
@@ -95,10 +154,10 @@ static void createPipelineBarriers(ib_Core* core, CreatePipelineBarriersDesc des
 
 		if (state.Resource->Type == ibr_ResourceType_Texture)
 		{
-			ib_assert(imageBarrierCount < desc.OutMemoryBarriers.Count);
-			if (imageBarrierCount < desc.OutMemoryBarriers.Count)
+			ib_assert(imageBarrierWrite < imageBarrierCount);
+			if (imageBarrierWrite < imageBarrierCount)
 			{
-				desc.OutImageBarriers.Data[imageBarrierCount] = ib_createTextureBarrier(core, (ib_TextureBarrierDesc)
+				imageBarriers[imageBarrierWrite] = ib_createTextureBarrier(graph->Core, (ib_TextureBarrierDesc)
 																						{
 																							.Texture = state.Resource->Texture,
 																							.OldLayout = state.Resource->TextureLayout,
@@ -108,20 +167,20 @@ static void createPipelineBarriers(ib_Core* core, CreatePipelineBarriersDesc des
 																							.SourceAccessMask = state.Resource->LastReleaseAccessMask,
 																							.DestAccessMask = state.AcquireAccessMask
 																						});
-				imageBarrierCount++;
 
 				// ASSUMPTION: Assume that what where we acquire is where we release for now.
 				state.Resource->LastReleaseAccessMask = state.ReleaseAccessMask;
 				state.Resource->LastReleaseStageMask = releaseStageMask;
 				state.Resource->TextureLayout = state.Layout;
+				imageBarrierWrite++;
 			}
 		}
 		else if (state.Resource->Type == ibr_ResourceType_Buffer)
 		{
-			ib_assert(memoryBarrierCount < desc.OutMemoryBarriers.Count);
-			if (memoryBarrierCount < desc.OutMemoryBarriers.Count)
+			ib_assert(memoryBarrierWrite < memoryBarrierCount);
+			if (memoryBarrierWrite < memoryBarrierCount)
 			{
-				desc.OutMemoryBarriers.Data[memoryBarrierCount] = (VkBufferMemoryBarrier2)
+				memoryBarriers[memoryBarrierWrite] = (VkBufferMemoryBarrier2)
 				{
 					.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
 					.buffer = state.Resource->Buffer->VulkanBuffer,
@@ -131,11 +190,11 @@ static void createPipelineBarriers(ib_Core* core, CreatePipelineBarriersDesc des
 					.srcAccessMask = state.Resource->LastReleaseAccessMask,
 					.dstAccessMask = state.AcquireAccessMask,
 				};
-				memoryBarrierCount++;
 
 				// ASSUMPTION: Assume that what where we acquire is where we release for now.
 				state.Resource->LastReleaseAccessMask = state.ReleaseAccessMask;
 				state.Resource->LastReleaseStageMask = releaseStageMask;
+				memoryBarrierWrite++;
 			}
 		}
 		else
@@ -143,7 +202,9 @@ static void createPipelineBarriers(ib_Core* core, CreatePipelineBarriersDesc des
 			ib_assert(false);
 		}
 	}
+	*desc.OutImageBarriers = imageBarriers;
 	*desc.OutImageBarrierCount = imageBarrierCount;
+	*desc.OutMemoryBarriers = memoryBarriers;
 	*desc.OutMemoryBarrierCount = memoryBarrierCount;
 }
 
@@ -625,14 +686,14 @@ void ibr_beginGraphicsPass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_Begi
 		VkImageMemoryBarrier2* imageMemoryBarriers = (VkImageMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkImageMemoryBarrier2) * totalResourceCount);
 		VkBufferMemoryBarrier2* memoryBarriers = (VkBufferMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkBufferMemoryBarrier2) * totalResourceCount);
 
-		uint32_t imageBarrierCount;
-		uint32_t memoryBarrierCount;
-		createPipelineBarriers(graph->Core, (CreatePipelineBarriersDesc)
+		uint32_t imageBarrierCount = totalResourceCount;
+		uint32_t memoryBarrierCount = totalResourceCount;
+		createPipelineBarriers(graph, (CreatePipelineBarriersDesc)
 							{
 								desc.OtherResourceStates,
-								{ imageMemoryBarriers, totalResourceCount },
+								&imageMemoryBarriers,
 								&imageBarrierCount,
-								{ memoryBarriers, totalResourceCount },
+								&memoryBarriers,
 								&memoryBarrierCount
 							});
 
@@ -771,18 +832,18 @@ void ibr_endGraphicsPass(ibr_RenderGraph* graph, VkCommandBuffer cmd)
 
 void ibr_barriers(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_BarriersDesc desc)
 {
-	VkImageMemoryBarrier2* imageMemoryBarriers = (VkImageMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkImageMemoryBarrier2) * desc.ResourceStates.Count);
-	VkBufferMemoryBarrier2* memoryBarriers = (VkBufferMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkBufferMemoryBarrier2) * desc.ResourceStates.Count);
+	VkImageMemoryBarrier2* imageMemoryBarriers = NULL;
+	VkBufferMemoryBarrier2* memoryBarriers = NULL;
 
-	uint32_t imageBarrierCount;
-	uint32_t memoryBarrierCount;
-	createPipelineBarriers(graph->Core,
+	uint32_t imageBarrierCount = 0;
+	uint32_t memoryBarrierCount = 0;
+	createPipelineBarriers(graph,
 						(CreatePipelineBarriersDesc)
 						{
 							desc.ResourceStates,
-							{ imageMemoryBarriers, desc.ResourceStates.Count },
+							&imageMemoryBarriers,
 							&imageBarrierCount,
-							{ memoryBarriers, desc.ResourceStates.Count },
+							&memoryBarriers,
 							&memoryBarrierCount
 						});
 
@@ -811,18 +872,18 @@ void ibr_beginComputePass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_Begin
 
 	vkCmdBeginDebugUtilsLabelEXT(cmd, &passDebugLabelInfo);
 
-	VkImageMemoryBarrier2* imageMemoryBarriers = (VkImageMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkImageMemoryBarrier2) * desc.ResourceStates.Count);
-	VkBufferMemoryBarrier2* memoryBarriers = (VkBufferMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkBufferMemoryBarrier2) * desc.ResourceStates.Count);
+	VkImageMemoryBarrier2* imageMemoryBarriers = NULL;
+	VkBufferMemoryBarrier2* memoryBarriers = NULL;
 
-	uint32_t imageBarrierCount;
-	uint32_t memoryBarrierCount;
-	createPipelineBarriers(graph->Core,
+	uint32_t imageBarrierCount = 0;
+	uint32_t memoryBarrierCount = 0;
+	createPipelineBarriers(graph,
 						(CreatePipelineBarriersDesc)
 						{
 							desc.ResourceStates,
-							{ imageMemoryBarriers, desc.ResourceStates.Count },
+							&imageMemoryBarriers,
 							&imageBarrierCount,
-							{ memoryBarriers, desc.ResourceStates.Count },
+							&memoryBarriers,
 							&memoryBarrierCount
 						});
 

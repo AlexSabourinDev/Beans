@@ -215,7 +215,7 @@ typedef struct
     VkPipelineStageFlags ReleaseStageMask; // When are future passes free to use this resource
 } ibr_ResourceState;
 
-typedef ib_range(ibr_ResourceState) ibr_ResourceStateRange;
+typedef ib_srange(ibr_ResourceState, 8) ibr_ResourceStateRange;
 typedef struct
 {
     ibr_ResourceStateRange ResourceStates;

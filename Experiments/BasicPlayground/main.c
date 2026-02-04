@@ -2,6 +2,7 @@
 #define SOKOL_NOAPI
 #include <sokol/sokol_app.h>
 
+
 #include <iceberg/ib_core.h>
 #include <iceberg/ib_rendergraph.h>
 
@@ -69,10 +70,7 @@ static void update(void)
         ibr_endGraphicsPass(graph, commands);
         ibr_barriers(graph, commands, (ibr_BarriersDesc)
                      {
-                         .ResourceStates = ib_staticArrayRange((ibr_ResourceState[])
-                                                               {
-                                                                   ibr_textureToPresentState(&swapchainResource)
-                                                               })
+                         .ResourceStates = { ibr_textureToPresentState(&swapchainResource) }
                      });
 
         ib_vkCheck(vkEndCommandBuffer(commands));

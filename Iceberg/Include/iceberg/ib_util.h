@@ -53,6 +53,20 @@ void ib_assertHarness(char const* file, uint32_t line, char const* func, bool te
 #define ib_clamp(x, min, max) ib_max(ib_min(x, max), min)
 
 // Range
+#define ib_srange(Type, StaticSize) \
+    struct \
+    { \
+        Type Array[StaticSize]; \
+        Type* Data; \
+        uint32_t Count; \
+    }
+
+#define ib_srangeBegin(range) \
+    (range.Data != NULL ? range.Data : &range.Array[0])
+
+#define ib_srangeEnd(range) \
+    (range.Data != NULL ? (range.Data + range.Count) : (&range.Array[0] + ib_arrayCount(range.Array)))
+
 #define ib_range(Type) \
     struct \
     { \
@@ -63,15 +77,15 @@ void ib_assertHarness(char const* file, uint32_t line, char const* func, bool te
 // This only works on fixed sized array. A pointer will give you an incorrect result here.
 #define ib_staticArrayRange(...) \
     { \
-        (__VA_ARGS__), \
-        ib_arrayCount((__VA_ARGS__)) \
+        .Data = (__VA_ARGS__), \
+        .Count = ib_arrayCount((__VA_ARGS__)) \
     }
 
 // Takes a single element pointer
 #define ib_singlePtrRange(...) \
     { \
-        __VA_ARGS__, \
-        1 \
+        .Data = __VA_ARGS__, \
+        .Count = 1 \
     }
 
 uint32_t ib_firstBitHighU32(uint32_t value);
