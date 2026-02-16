@@ -2,6 +2,8 @@
 #define SOKOL_NOAPI
 #include <sokol/sokol_app.h>
 
+#define CGLTF_IMPLEMENTATION
+#include <cgltf/cgltf.h>
 
 #include <iceberg/ib_core.h>
 #include <iceberg/ib_rendergraph.h>
@@ -9,6 +11,16 @@
 static ib_Core Core;
 static ibr_RenderGraphPool GraphPool;
 static ib_Surface Surface;
+
+typedef struct
+{
+    ib_Buffer VertexBuffer;
+} Mesh;
+
+Mesh loadMesh()
+{
+    cgltf_parse_file(&(cgltf_options){}, ""); // TODO:
+}
 
 static void init(void)
 {

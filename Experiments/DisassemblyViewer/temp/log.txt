@@ -1,0 +1,4 @@
+C:\Users\Alex\AppData\Local\Programs\Python\Python310\python.exe: can't find '__main__' module in ''
+py "" -i "" -o "temp/compilation_output.txt"
+py "C:\Users\Alex\Desktop\Development\Beans\Experiments\DisassemblyViewer\Backends\AmdLLPC.py" -i "" -o "temp/compilation_output.txt"
+hi

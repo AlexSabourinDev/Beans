@@ -25,6 +25,9 @@
     <Filter Include="Vulkan">
       <UniqueIdentifier>{f33b9ac3-1d7f-4e9d-9734-b15b73143fc7}</UniqueIdentifier>
     </Filter>
+    <Filter Include="cgltf">
+      <UniqueIdentifier>{0b3c3577-d83a-4efe-ae34-26545ac389c9}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_allocator.h">
@@ -149,6 +152,9 @@
     </ClInclude>
     <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_xlib_xrandr.h">
       <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cgltf\Include\cgltf\cgltf.h">
+      <Filter>cgltf</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

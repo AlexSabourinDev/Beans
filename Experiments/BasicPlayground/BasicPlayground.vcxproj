@@ -42,6 +42,7 @@
     <Import Project="..\MSVC.props" />
     <Import Project="..\Sokol.props" />
     <Import Project="..\Iceberg.props" />
+    <Import Project="..\cgtlf.props" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -49,6 +50,7 @@
     <Import Project="..\MSVC.props" />
     <Import Project="..\Sokol.props" />
     <Import Project="..\Iceberg.props" />
+    <Import Project="..\cgtlf.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -85,6 +87,7 @@
     <ClCompile Include="main.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\cgltf\Include\cgltf\cgltf.h" />
     <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_allocator.h" />
     <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_core.h" />
     <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_rendergraph.h" />

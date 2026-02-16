@@ -2754,3 +2754,107 @@ void ib_freeTLAS(ib_Raytracing* raytracing, ib_TLAS* accelerationStructure)
     vkDestroyAccelerationStructureKHR(raytracing->Core->LogicalDevice, accelerationStructure->Data.AccelerationStructure, ib_NoVkAllocator);
     ib_freeBuffer(raytracing->Core, &accelerationStructure->Data.Buffer);
 }
+
+// Utility constants to reduce friction when creating graphics pipelines.
+VkPipelineRasterizationStateCreateInfo const ib_RasterizationCullBackFaceCCW =
+{
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+    .polygonMode = VK_POLYGON_MODE_FILL,
+    .cullMode = VK_CULL_MODE_BACK_BIT,
+    .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+    .lineWidth = 1.0f
+};
+
+VkPipelineRasterizationStateCreateInfo const ib_RasterizationNoCull =
+{
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+    .polygonMode = VK_POLYGON_MODE_FILL,
+    .cullMode = VK_CULL_MODE_NONE,
+    .lineWidth = 1.0f
+};
+
+VkPipelineVertexInputStateCreateInfo const ib_VertexInputNull =
+{
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO
+};
+
+VkPipelineInputAssemblyStateCreateInfo const ib_InputAssemblyTriangleList =
+{
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+    .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+};
+
+VkPipelineInputAssemblyStateCreateInfo const ib_InputAssemblyLineList =
+{
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+    .topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST
+};
+
+VkPipelineDepthStencilStateCreateInfo const ib_DepthStateLessTestWriteNoStencil =
+{
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+    .depthTestEnable = VK_TRUE,
+    .depthWriteEnable = VK_TRUE,
+    .depthCompareOp = VK_COMPARE_OP_LESS,
+    .stencilTestEnable = VK_FALSE,
+    .minDepthBounds = 0.0f,
+    .maxDepthBounds = 1.0f,
+};
+
+VkPipelineDepthStencilStateCreateInfo const ib_DepthStateLessTestNoWriteNoStencil =
+{
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+    .depthTestEnable = VK_TRUE,
+    .depthWriteEnable = VK_FALSE,
+    .depthCompareOp = VK_COMPARE_OP_LESS,
+    .stencilTestEnable = VK_FALSE,
+    .minDepthBounds = 0.0f,
+    .maxDepthBounds = 1.0f,
+};
+
+VkPipelineDepthStencilStateCreateInfo const ib_DepthStateNoTestNoWrite =
+{
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+};
+
+VkPipelineColorBlendAttachmentState const ib_BlendDescAlphaBlend =
+{
+    .blendEnable = VK_TRUE,
+    .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+    .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+    .colorBlendOp = VK_BLEND_OP_ADD,
+    .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+    .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+    .alphaBlendOp = VK_BLEND_OP_ADD,
+    .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+};
+
+VkPipelineColorBlendAttachmentState const ib_BlendDescNoBlend =
+{
+    .blendEnable = VK_FALSE,
+    .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+};
+
+VkPipelineColorBlendAttachmentState const ib_BlendDescDualSourceBlend =
+{
+    .blendEnable = VK_TRUE,
+    .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+    .dstColorBlendFactor = VK_BLEND_FACTOR_SRC1_COLOR,
+    .colorBlendOp = VK_BLEND_OP_ADD,
+    .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+    .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+    .alphaBlendOp = VK_BLEND_OP_ADD,
+    .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+};
+
+VkPipelineColorBlendAttachmentState const ib_BlendDescAdditiveBlend =
+{
+    .blendEnable = VK_TRUE,
+    .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+    .dstColorBlendFactor = VK_BLEND_FACTOR_ONE,
+    .colorBlendOp = VK_BLEND_OP_ADD,
+    .srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+    .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+    .alphaBlendOp = VK_BLEND_OP_ADD,
+    .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+};
