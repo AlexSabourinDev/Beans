@@ -138,10 +138,9 @@ static void update(void)
 {
     imgui_beginFrame();
 
-    static bool mainWindowOpen = true;
     ImGuiIO* io = igGetIO_Nil();
-    igSetNextWindowSize(io->DisplaySize, ImGuiCond_Once);
-    igSetNextWindowPos((ImVec2_c){}, ImGuiCond_Once, (ImVec2_c){});
+    igSetNextWindowSize(io->DisplaySize, ImGuiCond_None);
+    igSetNextWindowPos((ImVec2_c){}, ImGuiCond_None, (ImVec2_c){});
     if (igBegin("Main Window", NULL, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize))
     {
         igInputText("Source File", InputFilePath, ib_arrayCount(InputFilePath), ImGuiInputTextFlags_None, NULL, NULL);
