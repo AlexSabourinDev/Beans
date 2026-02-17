@@ -1,12 +1,5 @@
-py "C:\Users\Alex\Desktop\Development\Beans\Experiments\DisassemblyViewer\Backends\AmdLLPC.py" -i "C:\Users\Alex\Desktop\Development\Iceberg\Iceberg\samples\sample_exposure\exposure.hlsl" -o "temp/compilation_output.txt" -e DownsampleCS
-C:\Users\Alex\Desktop\Development\Beans\Experiments\DisassemblyViewer\Backends/dxc/dxc.exe -spirv -T cs_6_6 -E DownsampleCS -fspv-target-env=vulkan1.3 -WX -O3 -enable-16bit-types -HV 2021 -Zpr -Fo temp/temp_shader.spv C:\Users\Alex\Desktop\Development\Iceberg\Iceberg\samples\sample_exposure\exposure.hlsl
-b''
-b''
-C:\Users\Alex\Desktop\Development\Beans\Experiments\DisassemblyViewer\Backends/rga/rga.exe -s vk-offline -c gfx1030 -a temp/temp_analysis.txt --comp temp/temp_shader.spv
-b'\r\nTarget GPU detected:\r\n\r\ngfx1030 (RDNA2)\r\n\tAMD Radeon PRO W6800\r\n\tAMD Radeon Pro V620\r\n\tAMD Radeon RX 6800\r\n\tAMD Radeon RX 6800 XT\r\n\tAMD Radeon RX 6900 XT\r\n\tAMD Radeon RX 6950 XT\r\n\tAMD Radeon(TM) Graphics\r\n\r\nBuilding for gfx1030... succeeded.\r\n'
-b''
-py "C:\Users\Alex\Desktop\Development\Beans\Experiments\DisassemblyViewer\Backends\AmdLLPC.py" -i "C:\Users\Alex\Desktop\Development\Iceberg\Iceberg\samples\sample_exposure\exposure.hlsl" -o "temp/compilation_output.txt" -e DownsampleCS
-C:\Users\Alex\Desktop\Development\Beans\Experiments\DisassemblyViewer\Backends/dxc/dxc.exe -spirv -T cs_6_6 -E DownsampleCS -fspv-target-env=vulkan1.3 -WX -O3 -enable-16bit-types -HV 2021 -Zpr -Fo temp/temp_shader.spv C:\Users\Alex\Desktop\Development\Iceberg\Iceberg\samples\sample_exposure\exposure.hlsl
+py "C:\Users\Alex\Desktop\Development\Beans\Experiments\DisassemblyViewer\Backends\AmdLLPC.py" -i "C:\Users\Alex\Desktop\Development\Iceberg\Iceberg\samples\sample_exposure\exposure.hlsl" -o "temp/compilation_output.txt" -e Multipass0CS
+C:\Users\Alex\Desktop\Development\Beans\Experiments\DisassemblyViewer\Backends/dxc/dxc.exe -spirv -T cs_6_6 -E Multipass0CS -fspv-target-env=vulkan1.3 -WX -O3 -enable-16bit-types -HV 2021 -Zpr -Fo temp/temp_shader.spv C:\Users\Alex\Desktop\Development\Iceberg\Iceberg\samples\sample_exposure\exposure.hlsl
 
 
 C:\Users\Alex\Desktop\Development\Beans\Experiments\DisassemblyViewer\Backends/rga/rga.exe -s vk-offline -c gfx1030 -a temp/temp_analysis.txt --comp temp/temp_shader.spv
