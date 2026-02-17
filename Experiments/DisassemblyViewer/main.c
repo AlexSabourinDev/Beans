@@ -71,11 +71,12 @@ static void SaveConfig()
     fclose(config);
 }
 
-void GetsNoNewline(char* array, int arrayCount, FILE* file)
+void GetStringNoNewline(char* array, int arrayCount, FILE* file)
 {
     fgets(array, arrayCount, file);
     size_t strLen = strlen(array);
-    if (strLen > 0)
+    // strip newline retained by fgets.
+    if (strLen > 0 && array[strLen - 1] == '\n')
     {
         array[strLen - 1] = 0;
     }
@@ -86,9 +87,9 @@ static void LoadConfig()
     FILE* config = fopen("config.txt", "r");
     if (config != NULL)
     {
-        GetsNoNewline(InputFilePath, ib_arrayCount(InputFilePath), config);
-        GetsNoNewline(BackendScriptPath, ib_arrayCount(BackendScriptPath), config);
-        GetsNoNewline(CompilationParams, ib_arrayCount(CompilationParams), config);
+        GetStringNoNewline(InputFilePath, ib_arrayCount(InputFilePath), config);
+        GetStringNoNewline(BackendScriptPath, ib_arrayCount(BackendScriptPath), config);
+        GetStringNoNewline(CompilationParams, ib_arrayCount(CompilationParams), config);
         fclose(config);
     }
 }
@@ -97,9 +98,15 @@ static ib_Core Core;
 static ibr_RenderGraphPool GraphPool;
 static ib_Surface Surface;
 
+static char* DisassemblyStats = NULL;
+static size_t DisassemblyStatsSize = 0;
+
 static void init(void)
 {
-    LogOutputHandle = fopen("temp/log.txt", "a");
+    DisassemblyStats = calloc(1, 1);
+    DisassemblyStatsSize = 1;
+
+    LogOutputHandle = fopen("temp/log.txt", "w");
     LoadConfig();
 
     ib_initCore((ib_CoreDesc)
@@ -123,6 +130,8 @@ static void init(void)
 
 static void kill(void)
 {
+    free(DisassemblyStats);
+
     SaveConfig();
     fclose(LogOutputHandle);
 
@@ -140,22 +149,40 @@ static void update(void)
 
     ImGuiIO* io = igGetIO_Nil();
     igSetNextWindowSize(io->DisplaySize, ImGuiCond_None);
-    igSetNextWindowPos((ImVec2_c){}, ImGuiCond_None, (ImVec2_c){});
+    igSetNextWindowPos((ImVec2_c){0}, ImGuiCond_None, (ImVec2_c){0});
     if (igBegin("Main Window", NULL, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize))
     {
         igInputText("Source File", InputFilePath, ib_arrayCount(InputFilePath), ImGuiInputTextFlags_None, NULL, NULL);
         igInputText("Backend Script", BackendScriptPath, ib_arrayCount(BackendScriptPath), ImGuiInputTextFlags_None, NULL, NULL);
         igInputText("Params", CompilationParams, ib_arrayCount(CompilationParams), ImGuiInputTextFlags_None, NULL, NULL);
-        if (igButton("Compile", (ImVec2_c){}))
+        if (igButton("Compile", (ImVec2_c){0}))
         {
             char const* outputFileName = "temp/compilation_output.txt";
 
             char systemCommand[1024];
-            snprintf(systemCommand, ib_arrayCount(systemCommand), "py \"%s\" -i \"%s\" -o \"%s\"",
-                     BackendScriptPath, InputFilePath, outputFileName);
+            snprintf(systemCommand, ib_arrayCount(systemCommand), "py \"%s\" -i \"%s\" -o \"%s\" %s",
+                     BackendScriptPath, InputFilePath, outputFileName, CompilationParams);
 
             win32RunProcess(systemCommand);
+
+            FILE *statsFile = fopen("temp/stats.txt", "rb");
+            if (statsFile != NULL)
+            {
+                fseek(statsFile, 0, SEEK_END);
+                long fileSize = ftell(statsFile);
+                fseek(statsFile, 0, SEEK_SET); /* same as rewind(f); */
+
+                DisassemblyStats = realloc(DisassemblyStats, fileSize + 1);
+                DisassemblyStatsSize = fileSize + 1;
+
+                fread(DisassemblyStats, fileSize, 1, statsFile);
+                DisassemblyStats[fileSize] = 0;
+
+                fclose(statsFile);
+            }
         }
+
+        igInputTextMultiline("##Stats", DisassemblyStats, DisassemblyStatsSize, (ImVec2_c) { 0 }, ImGuiInputTextFlags_ReadOnly, (ImGuiInputTextCallback) { 0 }, NULL);
     }
     igEnd();
 

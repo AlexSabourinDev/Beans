@@ -1,3 +1,3 @@
-test
-taste
-toast
+C:\Users\Alex\Desktop\Development\Iceberg\Iceberg\samples\sample_exposure\exposure.hlsl
+C:\Users\Alex\Desktop\Development\Beans\Experiments\DisassemblyViewer\Backends\AmdLLPC.py
+-e DownsampleCS
