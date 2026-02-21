@@ -94,7 +94,7 @@ static void loadConfig()
     }
 }
 
-void readWholeFile(char const* path, char** output, size_t* outputSize)
+bool readWholeFile(char const* path, char** output, size_t* outputSize)
 {
     FILE *statsFile = fopen(path, "rb");
     if (statsFile != NULL)
@@ -110,7 +110,10 @@ void readWholeFile(char const* path, char** output, size_t* outputSize)
         (*output)[fileSize] = 0;
 
         fclose(statsFile);
+        return true;
     }
+
+    return false;
 }
 
 static ib_Core Core;
@@ -120,10 +123,25 @@ static ib_Surface Surface;
 static char* DisassemblyStats = NULL;
 static size_t DisassemblyStatsSize = 0;
 
+static char* Disassembly = NULL;
+static size_t DisassemblySize = 0;
+
+char const* outputFileName = "temp/compilation_output.txt";
+char const* statsFileName = "temp/stats.txt";
+
 static void init(void)
 {
-    DisassemblyStats = calloc(1, 1);
-    DisassemblyStatsSize = 1;
+    if (!readWholeFile(statsFileName, &DisassemblyStats, &DisassemblyStatsSize))
+    {
+        DisassemblyStats = calloc(1, 1);
+        DisassemblyStatsSize = 1;
+    }
+
+    if (!readWholeFile(outputFileName, &Disassembly, &DisassemblySize))
+    {
+        Disassembly = calloc(1, 1);
+        DisassemblySize = 1;
+    }
 
     LogOutputHandle = fopen("temp/log.txt", "w");
     loadConfig();
@@ -150,6 +168,7 @@ static void init(void)
 static void kill(void)
 {
     free(DisassemblyStats);
+    free(Disassembly);
 
     saveConfig();
     fclose(LogOutputHandle);
@@ -181,15 +200,14 @@ static void update(void)
                 igInputText("Params", CompilationParams, ib_arrayCount(CompilationParams), ImGuiInputTextFlags_None, NULL, NULL);
                 if (igButton("Compile", (ImVec2_c) { 0 }))
                 {
-                    char const* outputFileName = "temp/compilation_output.txt";
-
                     char systemCommand[1024];
-                    snprintf(systemCommand, ib_arrayCount(systemCommand), "py \"%s\" -i \"%s\" -o \"%s\" %s",
-                             BackendScriptPath, InputFilePath, outputFileName, CompilationParams);
+                    snprintf(systemCommand, ib_arrayCount(systemCommand), "py \"%s\" -i \"%s\" -s \"%s\" -o=\"%s\" %s",
+                             BackendScriptPath, InputFilePath, statsFileName, outputFileName, CompilationParams);
 
                     win32RunProcess(systemCommand);
 
-                    readWholeFile("temp/stats.txt", &DisassemblyStats, &DisassemblyStatsSize);
+                    readWholeFile(statsFileName, &DisassemblyStats, &DisassemblyStatsSize);
+                    readWholeFile(outputFileName, &Disassembly, &DisassemblySize);
                 }
             }
 
@@ -202,21 +220,34 @@ static void update(void)
         }
         igEndTable();
 
-        if (igCollapsingHeader_TreeNodeFlags("Source File##1", ImGuiTreeNodeFlags_None))
+        igBeginTable("Table1", 2, ImGuiTableFlags_BordersOuter | ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable, (ImVec2_c) { 0.0f, -1.0f }, 0.0f);
         {
-            igBeginChild_Str("SourceFileWindow", (ImVec2_c) { 0 }, ImGuiChildFlags_ResizeY, ImGuiWindowFlags_None);
-            static char* fileData = NULL;
-            static size_t fileDataSize = 0;
+            igTableSetupColumn("Source", ImGuiTableColumnFlags_WidthStretch, 0.0f, 0);
+            igTableSetupColumn("Disassembly", ImGuiTableColumnFlags_WidthStretch, 0.0f, 0);
+            igTableHeadersRow();
 
-            static char viewedPath[256];
-            if (memcmp(viewedPath, InputFilePath, ib_arrayCount(InputFilePath)) != 0)
+            igTableNextColumn();
+
             {
-                memcpy(viewedPath, InputFilePath, ib_arrayCount(InputFilePath));
-                readWholeFile(viewedPath, &fileData, &fileDataSize);
+                static char* fileData = NULL;
+                static size_t fileDataSize = 0;
+
+                static char viewedPath[256];
+                if (memcmp(viewedPath, InputFilePath, ib_arrayCount(InputFilePath)) != 0)
+                {
+                    memcpy(viewedPath, InputFilePath, ib_arrayCount(InputFilePath));
+                    readWholeFile(viewedPath, &fileData, &fileDataSize);
+                }
+                igInputTextMultiline("##SourceFile", fileData, fileDataSize, (ImVec2_c) { -1.0f, -1.0f }, ImGuiInputTextFlags_ReadOnly, (ImGuiInputTextCallback) { 0 }, NULL);
             }
-            igInputTextMultiline("##SourceFile", fileData, fileDataSize, (ImVec2_c) { -1.0f, -1.0f }, ImGuiInputTextFlags_ReadOnly, (ImGuiInputTextCallback) { 0 }, NULL);
-            igEndChild();
+
+            igTableNextColumn();
+
+            {
+                igInputTextMultiline("##DisassemblyFile", Disassembly, DisassemblySize, (ImVec2_c) { -1.0f, -1.0f }, ImGuiInputTextFlags_ReadOnly, (ImGuiInputTextCallback) { 0 }, NULL);
+            }
         }
+        igEndTable();
     }
     igEnd();
 
