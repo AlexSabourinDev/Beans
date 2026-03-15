@@ -238,7 +238,10 @@ static void update(void)
                     memcpy(viewedPath, InputFilePath, ib_arrayCount(InputFilePath));
                     readWholeFile(viewedPath, &fileData, &fileDataSize);
                 }
-                igInputTextMultiline("##SourceFile", fileData, fileDataSize, (ImVec2_c) { -1.0f, -1.0f }, ImGuiInputTextFlags_ReadOnly, (ImGuiInputTextCallback) { 0 }, NULL);
+
+                char* sourceFile = fileData == NULL ? "" : fileData;
+                size_t fileSize = fileData == NULL ? 1u : fileDataSize;
+                igInputTextMultiline("##SourceFile", sourceFile, fileSize, (ImVec2_c) { -1.0f, -1.0f }, ImGuiInputTextFlags_ReadOnly, (ImGuiInputTextCallback) { 0 }, NULL);
             }
 
             igTableNextColumn();
