@@ -109,7 +109,7 @@ if __name__ == "__main__":
 
         deleteIfExists(tempDisassemblyPath)
     else:
-        with open(args.output, "w+") as f:
+        with open(args.output, "w") as f:
             runProc([f"{fileDir}/rga/utils/lc/opencl/bin/llvm-objdump.exe",
                 "--disassemble",
                 "--symbolize-operands",

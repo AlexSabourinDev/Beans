@@ -71,7 +71,7 @@ static void saveConfig()
     fclose(config);
 }
 
-void getStringNoNewline(char* array, int arrayCount, FILE* file)
+static void getStringNoNewline(char* array, int arrayCount, FILE* file)
 {
     fgets(array, arrayCount, file);
     size_t strLen = strlen(array);
@@ -94,7 +94,7 @@ static void loadConfig()
     }
 }
 
-bool readWholeFile(char const* path, char** output, size_t* outputSize)
+static bool readWholeFile(char const* path, char** output, size_t* outputSize)
 {
     FILE *statsFile = fopen(path, "rb");
     if (statsFile != NULL)
@@ -126,8 +126,8 @@ static size_t DisassemblyStatsSize = 0;
 static char* Disassembly = NULL;
 static size_t DisassemblySize = 0;
 
-char const* outputFileName = "temp/compilation_output.txt";
-char const* statsFileName = "temp/stats.txt";
+static char const* outputFileName = "temp/compilation_output.txt";
+static char const* statsFileName = "temp/stats.txt";
 
 static void init(void)
 {
@@ -315,7 +315,7 @@ static void update(void)
     imgui_endFrame();
 }
 
-void events(sapp_event const* event)
+static void events(sapp_event const* event)
 {
     if (event->type == SAPP_EVENTTYPE_RESIZED)
     {
