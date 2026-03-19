@@ -143,6 +143,7 @@ static void init(void)
         DisassemblySize = 1;
     }
 
+    CreateDirectoryA("temp", NULL);
     LogOutputHandle = fopen("temp/log.txt", "w");
     loadConfig();
 
