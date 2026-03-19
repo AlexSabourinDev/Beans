@@ -190,15 +190,45 @@ static void update(void)
     igSetNextWindowPos((ImVec2_c){0}, ImGuiCond_None, (ImVec2_c){0});
     if (igBegin("Main Window", NULL, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize))
     {
-        igBeginTable("Table0", 2, ImGuiTableFlags_None, (ImVec2_c) { 0 }, 0.0f);
+        static FILETIME lastFileTime = { 0 };
+
+        bool fileTimeChanged = false;
+
+        WIN32_FILE_ATTRIBUTE_DATA fileAttributes;
+        if (GetFileAttributesExA(InputFilePath, GetFileExInfoStandard, &fileAttributes) == TRUE)
+        {
+            fileTimeChanged = memcmp(&fileAttributes.ftLastWriteTime, &lastFileTime, sizeof(FILETIME)) != 0;
+            lastFileTime = fileAttributes.ftLastWriteTime;
+        }
+
+        static bool recompileOnFileChange = false;
+        igBeginTable("Table0", 2, ImGuiTableFlags_Resizable, (ImVec2_c) { 0 }, 0.0f);
         {
             igTableNextColumn();
 
             {
-                igInputText("Source File", InputFilePath, ib_arrayCount(InputFilePath), ImGuiInputTextFlags_None, NULL, NULL);
-                igInputText("Backend Script", BackendScriptPath, ib_arrayCount(BackendScriptPath), ImGuiInputTextFlags_None, NULL, NULL);
-                igInputText("Params", CompilationParams, ib_arrayCount(CompilationParams), ImGuiInputTextFlags_None, NULL, NULL);
-                if (igButton("Compile", (ImVec2_c) { 0 }))
+                igBeginTable("ParamTable", 2, ImGuiTableFlags_None, (ImVec2_c) { 0.0f, 0.0f }, 0.0f);
+                {
+                    igTableSetupColumn("Inputs", ImGuiTableColumnFlags_WidthStretch, 0.0f, 0);
+                    igTableSetupColumn("Labels", ImGuiTableColumnFlags_WidthFixed, 0.0f, 0);
+
+                    igTableNextColumn();
+                    igInputTextEx("##Source File", NULL, InputFilePath, ib_arrayCount(InputFilePath), (ImVec2_c) { -1.0f, 0.0f }, ImGuiInputTextFlags_None, NULL, NULL);
+                    igTableNextColumn();
+                    igText("Source File");
+
+                    igTableNextColumn();
+                    igInputTextEx("##Backend Script", NULL, BackendScriptPath, ib_arrayCount(BackendScriptPath), (ImVec2_c) { -1.0f, 0.0f }, ImGuiInputTextFlags_None, NULL, NULL);
+                    igTableNextColumn();
+                    igText("Backend Script");
+
+                    igTableNextColumn();
+                    igInputTextEx("##Params", NULL, CompilationParams, ib_arrayCount(CompilationParams), (ImVec2_c) { -1.0f, 0.0f }, ImGuiInputTextFlags_None, NULL, NULL);
+                    igTableNextColumn();
+                    igText("Params");
+                }
+                igEndTable();
+                if (igButton("Compile", (ImVec2_c) { 0 }) || (fileTimeChanged && recompileOnFileChange))
                 {
                     char systemCommand[1024];
                     snprintf(systemCommand, ib_arrayCount(systemCommand), "py \"%s\" -i \"%s\" -s \"%s\" -o=\"%s\" %s",
@@ -209,6 +239,9 @@ static void update(void)
                     readWholeFile(statsFileName, &DisassemblyStats, &DisassemblyStatsSize);
                     readWholeFile(outputFileName, &Disassembly, &DisassemblySize);
                 }
+
+                igSameLine(0.0f, -1.0f);
+                igCheckbox("Recoming On File Change", &recompileOnFileChange);
             }
 
             igTableNextColumn();
@@ -233,7 +266,8 @@ static void update(void)
                 static size_t fileDataSize = 0;
 
                 static char viewedPath[256];
-                if (memcmp(viewedPath, InputFilePath, ib_arrayCount(InputFilePath)) != 0)
+
+                if (memcmp(viewedPath, InputFilePath, ib_arrayCount(InputFilePath)) != 0 || fileTimeChanged)
                 {
                     memcpy(viewedPath, InputFilePath, ib_arrayCount(InputFilePath));
                     readWholeFile(viewedPath, &fileData, &fileDataSize);
