@@ -129,6 +129,11 @@ static size_t DisassemblySize = 0;
 static char const* outputFileName = "temp/compilation_output.txt";
 static char const* statsFileName = "temp/stats.txt";
 
+static char* SourceFileData = NULL;
+static size_t SourceFileSize = 0;
+
+static bool RecompileOnFileChange = false;
+
 static void init(void)
 {
     if (!readWholeFile(statsFileName, &DisassemblyStats, &DisassemblyStatsSize))
@@ -142,6 +147,9 @@ static void init(void)
         Disassembly = calloc(1, 1);
         DisassemblySize = 1;
     }
+
+    SourceFileData = calloc(1, 1);
+    SourceFileSize = 1;
 
     CreateDirectoryA("temp", NULL);
     LogOutputHandle = fopen("temp/log.txt", "w");
@@ -170,6 +178,7 @@ static void kill(void)
 {
     free(DisassemblyStats);
     free(Disassembly);
+    free(SourceFileData);
 
     saveConfig();
     fclose(LogOutputHandle);
@@ -180,6 +189,19 @@ static void kill(void)
     ib_freeSurface(&Core, &Surface);
     ibr_freeRenderGraphPool(&Core, &GraphPool);
     ib_killCore(&Core);
+}
+
+static bool ShouldCompile = false;
+
+static int sourceFileResize(ImGuiInputTextCallbackData* data)
+{
+    if (data->EventFlag == ImGuiInputTextFlags_CallbackResize)
+    {
+        SourceFileData = realloc(SourceFileData, data->BufSize);
+        SourceFileSize = data->BufSize;
+        data->Buf = SourceFileData;
+    }
+    return 0;
 }
 
 static void update(void)
@@ -202,7 +224,8 @@ static void update(void)
             lastFileTime = fileAttributes.ftLastWriteTime;
         }
 
-        static bool recompileOnFileChange = false;
+        ShouldCompile |= (RecompileOnFileChange && fileTimeChanged);
+
         igBeginTable("Table0", 2, ImGuiTableFlags_Resizable, (ImVec2_c) { 0 }, 0.0f);
         {
             igTableNextColumn();
@@ -229,7 +252,10 @@ static void update(void)
                     igText("Params");
                 }
                 igEndTable();
-                if (igButton("Compile", (ImVec2_c) { 0 }) || (fileTimeChanged && recompileOnFileChange))
+
+                ShouldCompile |= igButton("Compile", (ImVec2_c) { 0 });
+
+                if (ShouldCompile)
                 {
                     char systemCommand[1024];
                     snprintf(systemCommand, ib_arrayCount(systemCommand), "py \"%s\" -i \"%s\" -s \"%s\" -o=\"%s\" %s",
@@ -239,10 +265,12 @@ static void update(void)
 
                     readWholeFile(statsFileName, &DisassemblyStats, &DisassemblyStatsSize);
                     readWholeFile(outputFileName, &Disassembly, &DisassemblySize);
+
+                    ShouldCompile = false;
                 }
 
                 igSameLine(0.0f, -1.0f);
-                igCheckbox("Recoming On File Change", &recompileOnFileChange);
+                igCheckbox("Recompile On File Change", &RecompileOnFileChange);
             }
 
             igTableNextColumn();
@@ -263,20 +291,15 @@ static void update(void)
             igTableNextColumn();
 
             {
-                static char* fileData = NULL;
-                static size_t fileDataSize = 0;
-
                 static char viewedPath[256];
 
                 if (memcmp(viewedPath, InputFilePath, ib_arrayCount(InputFilePath)) != 0 || fileTimeChanged)
                 {
                     memcpy(viewedPath, InputFilePath, ib_arrayCount(InputFilePath));
-                    readWholeFile(viewedPath, &fileData, &fileDataSize);
+                    readWholeFile(viewedPath, &SourceFileData, &SourceFileSize);
                 }
 
-                char* sourceFile = fileData == NULL ? "" : fileData;
-                size_t fileSize = fileData == NULL ? 1u : fileDataSize;
-                igInputTextMultiline("##SourceFile", sourceFile, fileSize, (ImVec2_c) { -1.0f, -1.0f }, ImGuiInputTextFlags_ReadOnly, (ImGuiInputTextCallback) { 0 }, NULL);
+                igInputTextMultiline("##SourceFile", SourceFileData, SourceFileSize, (ImVec2_c) { -1.0f, -1.0f }, ImGuiInputTextFlags_CallbackResize, &sourceFileResize, NULL);
             }
 
             igTableNextColumn();
@@ -359,6 +382,24 @@ static void events(sapp_event const* event)
     {
         ib_rebuildSurface(&Core, &Surface);
     }
+    else if (event->type == SAPP_EVENTTYPE_KEY_DOWN)
+    {
+        if (event->key_code == SAPP_KEYCODE_C && event->modifiers == SAPP_MODIFIER_SHIFT | SAPP_MODIFIER_CTRL)
+        {
+            ShouldCompile = true;
+        }
+        else if (event->key_code == SAPP_KEYCODE_S && event->modifiers == SAPP_MODIFIER_CTRL)
+        {
+            FILE* sourceFile = fopen(InputFilePath, "wb");
+            fprintf(sourceFile, "%s", SourceFileData);
+            fclose(sourceFile);
+
+            if (RecompileOnFileChange)
+            {
+                ShouldCompile = true;
+            }
+        }
+    }
 }
 
 sapp_desc sokol_main(int argc, char* argv[]) {
@@ -367,6 +408,7 @@ sapp_desc sokol_main(int argc, char* argv[]) {
         .frame_cb = &update,
         .cleanup_cb = &kill,
         .event_cb = &events,
-        .win32.console_attach = true
+        .win32.console_attach = true,
+        .window_title = "Disassembly Playground"
     };
 }
