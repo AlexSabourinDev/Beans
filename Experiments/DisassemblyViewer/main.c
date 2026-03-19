@@ -168,7 +168,7 @@ static void init(void)
                                        .Win32WindowHandle = sapp_win32_get_hwnd(),
                                        .Win32InstanceHandle = GetModuleHandle(NULL),
                                        .UseVSync = true,
-                                       .SRGB = true
+                                       .SRGB = false
                                    });
 
     imgui_init(&Core, Surface.Format.format);
