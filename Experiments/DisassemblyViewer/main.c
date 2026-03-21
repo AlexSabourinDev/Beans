@@ -94,22 +94,26 @@ static void loadConfig()
     }
 }
 
+static void readWholeFileFromHandle(FILE* file, char** output, size_t* outputSize)
+{
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    fseek(file, 0, SEEK_SET); /* same as rewind(f); */
+
+    *output = realloc(*output, fileSize + 1);
+    *outputSize = fileSize + 1;
+
+    fread(*output, fileSize, 1, file);
+    (*output)[fileSize] = 0;
+}
+
 static bool readWholeFile(char const* path, char** output, size_t* outputSize)
 {
-    FILE *statsFile = fopen(path, "rb");
-    if (statsFile != NULL)
+    FILE *file = fopen(path, "rb");
+    if (file != NULL)
     {
-        fseek(statsFile, 0, SEEK_END);
-        long fileSize = ftell(statsFile);
-        fseek(statsFile, 0, SEEK_SET); /* same as rewind(f); */
-
-        *output = realloc(*output, fileSize + 1);
-        *outputSize = fileSize + 1;
-
-        fread(*output, fileSize, 1, statsFile);
-        (*output)[fileSize] = 0;
-
-        fclose(statsFile);
+        readWholeFileFromHandle(file, output, outputSize);
+        fclose(file);
         return true;
     }
 
@@ -126,8 +130,9 @@ static size_t DisassemblyStatsSize = 0;
 static char* Disassembly = NULL;
 static size_t DisassemblySize = 0;
 
-static char const* outputFileName = "temp/compilation_output.txt";
-static char const* statsFileName = "temp/stats.txt";
+static char const* OutputFileName = "temp/compilation_output.txt";
+static char const* StatsFileName = "temp/stats.txt";
+static char const* LogFileName = "temp/log.txt";
 
 static char* SourceFileData = NULL;
 static size_t SourceFileSize = 0;
@@ -137,13 +142,13 @@ static bool FileModified = false;
 
 static void init(void)
 {
-    if (!readWholeFile(statsFileName, &DisassemblyStats, &DisassemblyStatsSize))
+    if (!readWholeFile(StatsFileName, &DisassemblyStats, &DisassemblyStatsSize))
     {
         DisassemblyStats = calloc(1, 1);
         DisassemblyStatsSize = 1;
     }
 
-    if (!readWholeFile(outputFileName, &Disassembly, &DisassemblySize))
+    if (!readWholeFile(OutputFileName, &Disassembly, &DisassemblySize))
     {
         Disassembly = calloc(1, 1);
         DisassemblySize = 1;
@@ -153,7 +158,7 @@ static void init(void)
     SourceFileSize = 1;
 
     CreateDirectoryA("temp", NULL);
-    LogOutputHandle = fopen("temp/log.txt", "w");
+    LogOutputHandle = fopen(LogFileName, "w+");
     loadConfig();
 
     ib_initCore((ib_CoreDesc)
@@ -260,12 +265,18 @@ static void update(void)
                 {
                     char systemCommand[1024];
                     snprintf(systemCommand, ib_arrayCount(systemCommand), "py \"%s\" -i \"%s\" -s \"%s\" -o=\"%s\" %s",
-                             BackendScriptPath, InputFilePath, statsFileName, outputFileName, CompilationParams);
+                             BackendScriptPath, InputFilePath, StatsFileName, OutputFileName, CompilationParams);
 
                     win32RunProcess(systemCommand);
 
-                    readWholeFile(statsFileName, &DisassemblyStats, &DisassemblyStatsSize);
-                    readWholeFile(outputFileName, &Disassembly, &DisassemblySize);
+                    readWholeFile(StatsFileName, &DisassemblyStats, &DisassemblyStatsSize);
+                    readWholeFile(OutputFileName, &Disassembly, &DisassemblySize);
+
+                    char* logFile = NULL;
+                    size_t logFileSize = 0;
+                    readWholeFileFromHandle(LogOutputHandle, &logFile, &logFileSize);
+                    printf("%s\n", logFile);
+                    free(logFile);
 
                     ShouldCompile = false;
                 }
