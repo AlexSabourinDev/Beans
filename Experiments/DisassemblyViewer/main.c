@@ -133,6 +133,7 @@ static char* SourceFileData = NULL;
 static size_t SourceFileSize = 0;
 
 static bool RecompileOnFileChange = false;
+static bool FileModified = false;
 
 static void init(void)
 {
@@ -284,7 +285,7 @@ static void update(void)
 
         igBeginTable("Table1", 2, ImGuiTableFlags_BordersOuter | ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable, (ImVec2_c) { 0.0f, -1.0f }, 0.0f);
         {
-            igTableSetupColumn("Source", ImGuiTableColumnFlags_WidthStretch, 0.0f, 0);
+            igTableSetupColumn(FileModified ? "Source*" : "Source", ImGuiTableColumnFlags_WidthStretch, 0.0f, 0);
             igTableSetupColumn("Disassembly", ImGuiTableColumnFlags_WidthStretch, 0.0f, 0);
             igTableHeadersRow();
 
@@ -299,7 +300,7 @@ static void update(void)
                     readWholeFile(viewedPath, &SourceFileData, &SourceFileSize);
                 }
 
-                igInputTextMultiline("##SourceFile", SourceFileData, SourceFileSize, (ImVec2_c) { -1.0f, -1.0f }, ImGuiInputTextFlags_CallbackResize, &sourceFileResize, NULL);
+                FileModified |= igInputTextMultiline("##SourceFile", SourceFileData, SourceFileSize, (ImVec2_c) { -1.0f, -1.0f }, ImGuiInputTextFlags_CallbackResize, &sourceFileResize, NULL);
             }
 
             igTableNextColumn();
@@ -384,19 +385,24 @@ static void events(sapp_event const* event)
     }
     else if (event->type == SAPP_EVENTTYPE_KEY_DOWN)
     {
-        if (event->key_code == SAPP_KEYCODE_C && event->modifiers == SAPP_MODIFIER_SHIFT | SAPP_MODIFIER_CTRL)
+        if (event->key_code == SAPP_KEYCODE_C && event->modifiers == (SAPP_MODIFIER_SHIFT | SAPP_MODIFIER_CTRL))
         {
             ShouldCompile = true;
         }
         else if (event->key_code == SAPP_KEYCODE_S && event->modifiers == SAPP_MODIFIER_CTRL)
         {
             FILE* sourceFile = fopen(InputFilePath, "wb");
-            fprintf(sourceFile, "%s", SourceFileData);
-            fclose(sourceFile);
-
-            if (RecompileOnFileChange)
+            if (sourceFile != NULL)
             {
-                ShouldCompile = true;
+                fprintf(sourceFile, "%s", SourceFileData);
+                fclose(sourceFile);
+
+                if (RecompileOnFileChange)
+                {
+                    ShouldCompile = true;
+                }
+
+                FileModified = false;
             }
         }
     }
