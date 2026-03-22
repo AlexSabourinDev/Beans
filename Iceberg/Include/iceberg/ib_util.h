@@ -94,6 +94,9 @@ void ib_assertHarness(char const* file, uint32_t line, char const* func, bool te
 uint32_t ib_firstBitHighU32(uint32_t value);
 uint32_t ib_firstBitLowU32(uint32_t value);
 uint32_t ib_bitCountU32(uint32_t value);
+uint32_t ib_firstBitHighU64(uint64_t value);
+uint32_t ib_firstBitLowU64(uint64_t value);
+uint32_t ib_bitCountU64(uint64_t value);
 
 #ifdef __cplusplus
 }

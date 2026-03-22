@@ -213,25 +213,6 @@ typedef struct
 	iba_PageHeader Header;
 } CPUPage;
 
-static iba_PageHeader* allocCPUPage(void* userData, size_t pageSize)
-{
-	ib_unused(userData);
-	void* memoryPage = malloc(pageSize + sizeof(iba_PageHeader));
-	iba_PageHeader* header = (iba_PageHeader*)memoryPage;
-	header->NextPage = NULL;
-	return header;
-}
-
-static void freeCPUPage(void* userData, iba_PageHeader* page)
-{
-	free(page);
-}
-
-void* stackPageToMemory(iba_PageHeader* header, size_t offset)
-{
-	return ((uint8_t *)header) + sizeof(iba_PageHeader) + offset;
-}
-
 ibr_RenderGraphPool ibr_allocRenderGraphPool(ib_Core* core)
 {
 	ibr_RenderGraphPool pool = (ibr_RenderGraphPool) { 0 };
@@ -240,15 +221,9 @@ ibr_RenderGraphPool ibr_allocRenderGraphPool(ib_Core* core)
 		pool.Graphs[i].Core = core;
 
 		static size_t const fullPageSize = 1024 * 1024;
-		iba_initStackAllocator((iba_StackAllocatorDesc)
+		iba_initCpuStackAllocator((iba_CpuStackAllocatorDesc)
 							{
-								.PageAllocator =
-								{
-									.AllocPage = &allocCPUPage,
-									.FreePage = &freeCPUPage
-								},
-								// Remove page header from page size to get the full page.
-								.PageSize = fullPageSize - sizeof(iba_PageHeader)
+								.PageSize = fullPageSize
 							}, &pool.Graphs[i].FrameCPUStack);
 
 		ib_initTimerManager((ib_TimerManagerDesc)
@@ -444,7 +419,7 @@ void ibr_endFrame(ibr_RenderGraphPool* pool, ibr_RenderGraph* graph)
 void* ibr_allocTransientMemory(ibr_RenderGraph* graph, size_t size)
 {
 	iba_StackAllocation allocation = iba_stackAlloc(&graph->FrameCPUStack, (iba_StackAllocationRequest) { size });
-	return stackPageToMemory(allocation.Page, allocation.Offset);
+	return iba_cpuStackAllocToMemory(allocation);
 }
 
 ibr_Resource ibr_allocPassResource(ibr_RenderGraph* graph, ibr_ResourceDesc resourceDesc)

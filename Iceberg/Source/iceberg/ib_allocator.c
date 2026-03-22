@@ -78,19 +78,19 @@ static void tlsfFindUpperBoundIndices(uint32_t size, uint32_t* firstLevelIndex, 
     }
 }
 
-static void tlsfFindLowerBoundIndices(uint32_t size, uint32_t* firstLevelIndex, uint32_t* secondLevelIndex)
+static void tlsfFindLowerBoundIndices(size_t size, uint32_t* firstLevelIndex, uint32_t* secondLevelIndex)
 {
     if (size >= tlsf_MinSize)
     {
-        uint32_t highBit = ib_firstBitHighU32(size);
+        uint32_t highBit = ib_firstBitHighU64(size);
 
         *firstLevelIndex = highBit - iba_TlsfSecondLevelBitCount + 1;
-        *secondLevelIndex = (size >> (highBit - iba_TlsfSecondLevelBitCount)) - iba_TlsfSecondLevelBlockCount;
+        *secondLevelIndex = (uint32_t)((size >> (highBit - iba_TlsfSecondLevelBitCount)) - iba_TlsfSecondLevelBlockCount);
     }
     else // Less than min size ("denormals")
     {
         *firstLevelIndex = 0;
-        *secondLevelIndex = size - 1;
+        *secondLevelIndex = (uint32_t)(size - 1);
     }
 }
 
@@ -277,7 +277,7 @@ void iba_killTlsfAllocator(iba_TlsfAllocator* allocator)
     *allocator = (iba_TlsfAllocator) { 0 };
 }
 
-void iba_tlsfAddRoot(iba_TlsfAllocator* allocator, uintptr_t userData, uint32_t size)
+void iba_tlsfAddRoot(iba_TlsfAllocator* allocator, uintptr_t userData, size_t size)
 {
     iba_TlsfBlock* rootBlock = tlsfAllocBlock(allocator);
     rootBlock->RootUserData = userData;
@@ -352,15 +352,15 @@ iba_TlsfAllocation iba_tlsfAlloc(iba_TlsfAllocator* allocator, size_t requestSiz
         }
 
         // Assume alignment is pow2.
-        uint32_t offset = popped->Offset;
-        uint32_t alignmentMask = (uint32_t)(alignment - 1);
+        size_t offset = popped->Offset;
+        size_t alignmentMask = (alignment - 1);
         offset = (offset + alignmentMask) & (~alignmentMask);
 
         // Make sure we didn't over align from our bump that we added above.
         ib_assert(offset - popped->Offset <= alignment - 1);
         ib_assert(offset + requestSize <= popped->Offset + popped->Size);
 
-        allocation = (iba_TlsfAllocation) { popped->RootUserData, offset, popped };
+        allocation = (iba_TlsfAllocation) { offset, popped };
     }
 
     return allocation;
@@ -395,7 +395,7 @@ typedef struct
     uint32_t TypeBits;
     VkMemoryPropertyFlags RequiredFlags;
     VkMemoryPropertyFlags PreferredFlags;
-    size_t MaximumAllocationSize;
+    size_t AllocationSize;
 } iba_MemoryTypeRequest;
 
 static iba_MemoryType iba_findMemoryType(VkPhysicalDevice physicalDevice, iba_MemoryTypeRequest request)
@@ -412,7 +412,7 @@ static iba_MemoryType iba_findMemoryType(VkPhysicalDevice physicalDevice, iba_Me
         uint32_t heapIndex = types[i].heapIndex;
         if ((request.TypeBits & (1 << i))
             && (types[i].propertyFlags & (request.RequiredFlags | request.PreferredFlags)) == (request.RequiredFlags | request.PreferredFlags)
-            && (heaps[heapIndex].size >= request.MaximumAllocationSize))
+            && (heaps[heapIndex].size >= request.AllocationSize))
         {
             return (iba_MemoryType) { i, types[i].propertyFlags };
         }
@@ -425,7 +425,7 @@ static iba_MemoryType iba_findMemoryType(VkPhysicalDevice physicalDevice, iba_Me
             uint32_t heapIndex = types[i].heapIndex;
             if ((request.TypeBits & (1 << i))
                 && (types[i].propertyFlags & request.RequiredFlags) == request.RequiredFlags
-                && (heaps[heapIndex].size >= request.MaximumAllocationSize))
+                && (heaps[heapIndex].size >= request.AllocationSize))
             {
                 return (iba_MemoryType) { i, types[i].propertyFlags };
             }
@@ -475,12 +475,8 @@ static uint32_t getRootIndex(uintptr_t userData)
     return (uint32_t)(userData >> 32ull);
 }
 
-static void addMemoryRoot(iba_GpuAllocator* allocator, uint32_t poolIndex, iba_GpuMemoryPool* pool, iba_MemoryType memoryType)
+static VkDeviceMemory gpuAllocDeviceMemoryFromType(VkDevice logicalDevice, size_t size, iba_MemoryType memoryType)
 {
-    ib_assert(pool->RootCount < iba_MaxGpuRootAllocations);
-    uint32_t rootId = pool->RootCount++;
-    iba_GpuMemoryRoot* root = &pool->Roots[rootId];
-
     VkMemoryAllocateFlagsInfoKHR memoryAllocFlagsInfo =
     {
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO_KHR,
@@ -491,11 +487,22 @@ static void addMemoryRoot(iba_GpuAllocator* allocator, uint32_t poolIndex, iba_G
     {
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .pNext = &memoryAllocFlagsInfo,
-        .allocationSize = allocator->RootMemorySize,
+        .allocationSize = size,
         .memoryTypeIndex = memoryType.Index
     };
 
-    ib_vkCheck(vkAllocateMemory(allocator->LogicalDevice, &memoryAllocInfo, NULL, &root->Memory));
+    VkDeviceMemory memory;
+    ib_vkCheck(vkAllocateMemory(logicalDevice, &memoryAllocInfo, NULL, &memory));
+    return memory;
+}
+
+static void addMemoryRoot(iba_GpuAllocator* allocator, uint32_t poolIndex, iba_GpuMemoryPool* pool, iba_MemoryType memoryType)
+{
+    ib_assert(pool->RootCount < iba_MaxGpuRootAllocations);
+    uint32_t rootId = pool->RootCount++;
+    iba_GpuMemoryRoot* root = &pool->Roots[rootId];
+
+    root->Memory = gpuAllocDeviceMemoryFromType(allocator->LogicalDevice, allocator->RootMemorySize, memoryType);
 
     if (memoryType.Flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
     {
@@ -506,7 +513,7 @@ static void addMemoryRoot(iba_GpuAllocator* allocator, uint32_t poolIndex, iba_G
     iba_tlsfAddRoot(&pool->TlsfAllocator, toRootUserData(poolIndex, rootId), allocator->RootMemorySize);
 }
 
-iba_GpuAllocation iba_gpuAlloc(iba_GpuAllocator* allocator, iba_GpuAllocationRequest request)
+static iba_GpuAllocation gpuTlsfAlloc(iba_GpuAllocator* allocator, iba_GpuAllocationRequest request)
 {
     size_t memorySize = request.Size;
     size_t memoryAlignment = request.Alignment;
@@ -519,7 +526,7 @@ iba_GpuAllocation iba_gpuAlloc(iba_GpuAllocator* allocator, iba_GpuAllocationReq
                                                              .TypeBits = request.TypeBits,
                                                              .RequiredFlags = request.RequiredFlags,
                                                              .PreferredFlags = request.PreferredFlags,
-                                                             .MaximumAllocationSize = allocator->RootMemorySize
+                                                             .AllocationSize = allocator->RootMemorySize
                                                          });
     ib_assert(memoryType.Index != UINT32_MAX, "Invalid memory type index.");
 
@@ -565,17 +572,60 @@ iba_GpuAllocation iba_gpuAlloc(iba_GpuAllocator* allocator, iba_GpuAllocationReq
         ib_assert(tlsfAlloc.Block != NULL); // If its null, abort.
     }
 
-    uint32_t rootIndex = getRootIndex(tlsfAlloc.RootUserData);
+    uint32_t rootIndex = getRootIndex(tlsfAlloc.Block->RootUserData);
     uint8_t* mappedMem = foundPool->Roots[rootIndex].Map;
     iba_GpuAllocation allocation =
     {
         .Memory = foundPool->Roots[rootIndex].Memory,
         .Offset = tlsfAlloc.Offset,
         .AllocId = (uint64_t)tlsfAlloc.Block,
-        .CPUMemory = mappedMem != NULL ? mappedMem + tlsfAlloc.Offset : NULL
+        .CPUMemory = mappedMem != NULL ? mappedMem + tlsfAlloc.Offset : NULL,
+        .Type = request.AllocationType
     };
 
     return allocation;
+}
+
+static iba_GpuAllocation gpuDeviceAlloc(iba_GpuAllocator* allocator, iba_GpuAllocationRequest request)
+{
+    iba_GpuAllocation allocation = { 0 };
+    allocation.Type = request.AllocationType;
+
+    iba_MemoryType const memoryType = iba_findMemoryType(allocator->PhysicalDevice,
+                                                         (iba_MemoryTypeRequest)
+                                                         {
+                                                             .TypeBits = request.TypeBits,
+                                                             .RequiredFlags = request.RequiredFlags,
+                                                             .PreferredFlags = request.PreferredFlags,
+                                                             .AllocationSize = request.Size
+                                                         });
+    ib_assert(memoryType.Index != UINT32_MAX, "Invalid memory type index.");
+    allocation.Memory = gpuAllocDeviceMemoryFromType(allocator->LogicalDevice, request.Size, memoryType);
+
+    if (memoryType.Flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+    {
+        uint32_t flags = 0;
+        ib_vkCheck(vkMapMemory(allocator->LogicalDevice, allocation.Memory, 0, VK_WHOLE_SIZE, flags, &allocation.CPUMemory));
+    }
+
+    return allocation;
+}
+
+iba_GpuAllocation iba_gpuAlloc(iba_GpuAllocator* allocator, iba_GpuAllocationRequest request)
+{
+    if (request.AllocationType == iba_GpuAllocationType_Default)
+    {
+        return gpuTlsfAlloc(allocator, request);
+    }
+    else if (request.AllocationType == iba_GpuAllocationType_Device)
+    {
+        return gpuDeviceAlloc(allocator, request);
+    }
+    else
+    {
+        ib_assert(false);
+        return (iba_GpuAllocation) { 0 };
+    }
 }
 
 void iba_gpuFree(iba_GpuAllocator *allocator, iba_GpuAllocation* allocation)
@@ -585,14 +635,25 @@ void iba_gpuFree(iba_GpuAllocator *allocator, iba_GpuAllocation* allocation)
         return;
     }
 
-    iba_TlsfBlock* block = (iba_TlsfBlock*)allocation->AllocId;
-
-    uint32_t poolIndex = getPoolIndex(block->RootUserData);
-    iba_GpuMemoryPool* memoryPool = allocator->MemoryPools;
-    for (uint32_t i = 0; i < poolIndex; i++, memoryPool = memoryPool->Next)
+    if (allocation->Type == iba_GpuAllocationType_Default)
     {
+        iba_TlsfBlock* block = (iba_TlsfBlock*)allocation->AllocId;
+
+        uint32_t poolIndex = getPoolIndex(block->RootUserData);
+        iba_GpuMemoryPool* memoryPool = allocator->MemoryPools;
+        for (uint32_t i = 0; i < poolIndex; i++, memoryPool = memoryPool->Next)
+        {
+        }
+        iba_tlsfFree(&memoryPool->TlsfAllocator, block);
     }
-    iba_tlsfFree(&memoryPool->TlsfAllocator, block);
+    else if(allocation->Type == iba_GpuAllocationType_Device)
+    {
+        vkFreeMemory(allocator->LogicalDevice, allocation->Memory, NULL);
+    }
+    else
+    {
+        ib_assert(false);
+    }
 }
 
 static VkAllocationCallbacks* ibsa_NoVkAllocator = NULL;
@@ -617,6 +678,33 @@ void iba_killStackAllocator(iba_StackAllocator *allocator)
         allocator->PageAllocator.FreePage(allocator->PageAllocator.UserData, currentPage);
     }
     *allocator = (iba_StackAllocator) { 0 };
+}
+
+static iba_PageHeader* allocCPUPage(void* userData, size_t pageSize)
+{
+    ib_unused(userData);
+    void* memoryPage = malloc(pageSize + sizeof(iba_PageHeader));
+    iba_PageHeader* header = (iba_PageHeader*)memoryPage;
+    header->NextPage = NULL;
+    return header;
+}
+
+static void freeCPUPage(void* userData, iba_PageHeader* page)
+{
+    free(page);
+}
+
+void iba_initCpuStackAllocator(iba_CpuStackAllocatorDesc desc, iba_StackAllocator *allocator)
+{
+    iba_initStackAllocator((iba_StackAllocatorDesc)
+                           {
+                               .PageAllocator =
+                               {
+                                   .AllocPage = &allocCPUPage,
+                                   .FreePage = &freeCPUPage
+                               },
+                               .PageSize = desc.PageSize - sizeof(iba_PageHeader)
+                           }, allocator);
 }
 
 void iba_stackReset(iba_StackAllocator *allocator)

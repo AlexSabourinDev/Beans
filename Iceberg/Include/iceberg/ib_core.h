@@ -219,6 +219,7 @@ typedef struct
     VkMemoryPropertyFlags RequiredMemoryFlags;
     VkMemoryPropertyFlags PreferredMemoryFlags;
     char const* DebugName;
+    iba_GpuAllocationType AllocationType;
     struct
     {
         void const* Data;

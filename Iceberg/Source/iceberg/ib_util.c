@@ -48,7 +48,27 @@ uint32_t ib_firstBitLowU32(uint32_t value)
 	return index;
 }
 
-uint32_t ib_bitCountU32(uint32_t value)
+uint32_t ib_bitCountU64(uint32_t value)
 {
-	return _mm_popcnt_u32(value);
+	return _mm_popcnt_u64(value);
+}
+
+
+uint32_t ib_firstBitHighU64(uint64_t value)
+{
+	unsigned long index;
+	ib_check(_BitScanReverse64(&index, value));
+	return index;
+}
+
+uint32_t ib_firstBitLowU64(uint64_t value)
+{
+	unsigned long index;
+	ib_check(_BitScanForward64(&index, value));
+	return index;
+}
+
+uint32_t ib_bitCountU32(uint64_t value)
+{
+	return _mm_popcnt_u64(value);
 }

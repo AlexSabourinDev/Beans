@@ -21,8 +21,8 @@
 typedef struct iba_TlsfBlock
 {
     uintptr_t RootUserData;
-    uint32_t Offset;
-    uint32_t Size;
+    size_t Offset;
+    size_t Size;
     bool Allocated;
 
     // Address neighbour blocks
@@ -36,8 +36,7 @@ typedef struct iba_TlsfBlock
 
 typedef struct
 {
-    uintptr_t RootUserData;
-    uint32_t Offset;
+    size_t Offset;
     iba_TlsfBlock* Block;
 } iba_TlsfAllocation;
 
@@ -51,7 +50,7 @@ typedef struct
 
 void iba_initTlsfAllocator(iba_TlsfAllocator* allocator);
 void iba_killTlsfAllocator(iba_TlsfAllocator* allocator);
-void iba_tlsfAddRoot(iba_TlsfAllocator* allocator, uintptr_t allocId, uint32_t size);
+void iba_tlsfAddRoot(iba_TlsfAllocator* allocator, uintptr_t allocId, size_t size);
 iba_TlsfAllocation iba_tlsfAlloc(iba_TlsfAllocator* allocator, size_t size, size_t alignment);
 void iba_tlsfFree(iba_TlsfAllocator* allocator, iba_TlsfBlock* allocationBlock);
 
@@ -77,9 +76,15 @@ typedef struct
 {
     VkPhysicalDevice PhysicalDevice;
     VkDevice LogicalDevice;
-    uint32_t RootMemorySize;
+    size_t RootMemorySize;
     iba_GpuMemoryPool* MemoryPools;
 } iba_GpuAllocator;
+
+typedef enum
+{
+    iba_GpuAllocationType_Default = 0,
+    iba_GpuAllocationType_Device,
+} iba_GpuAllocationType;
 
 typedef struct
 {
@@ -88,6 +93,7 @@ typedef struct
     uint32_t TypeBits;
     VkMemoryPropertyFlags RequiredFlags;
     VkMemoryPropertyFlags PreferredFlags;
+    iba_GpuAllocationType AllocationType;
 } iba_GpuAllocationRequest;
 
 // General allocation Id for allocator tracking
@@ -100,13 +106,14 @@ typedef struct
     VkDeviceSize Offset;
     iba_GpuAllocationId AllocId;
     uint8_t* CPUMemory;
+    iba_GpuAllocationType Type;
 } iba_GpuAllocation;
 
 typedef struct
 {
     VkPhysicalDevice PhysicalDevice;
     VkDevice LogicalDevice;
-    uint32_t MaxAllocationSize;
+    size_t MaxAllocationSize;
 } iba_GpuAllocatorDesc;
 
 void iba_initGpuAllocator(iba_GpuAllocatorDesc desc, iba_GpuAllocator *allocator);
@@ -155,6 +162,12 @@ void iba_stackReset(iba_StackAllocator *allocator);
 
 typedef struct
 {
+    size_t PageSize;
+} iba_CpuStackAllocatorDesc;
+void iba_initCpuStackAllocator(iba_CpuStackAllocatorDesc desc, iba_StackAllocator *allocator);
+
+typedef struct
+{
     size_t Size;
     size_t Alignment;
 } iba_StackAllocationRequest;
@@ -167,5 +180,10 @@ typedef struct
 
 iba_StackAllocation iba_stackAlloc(iba_StackAllocator* allocator, iba_StackAllocationRequest request);
 void iba_stackFree(iba_StackAllocator* allocator, iba_StackAllocation* allocation);
+
+static void* iba_cpuStackAllocToMemory(iba_StackAllocation stackAlloc)
+{
+	return ((uint8_t *)stackAlloc.Page) + sizeof(iba_PageHeader) + stackAlloc.Offset;
+}
 
 #endif // IB_ALLOCATOR_H

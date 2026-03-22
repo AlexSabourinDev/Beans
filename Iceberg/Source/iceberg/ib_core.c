@@ -1405,6 +1405,7 @@ ib_Buffer ib_allocBuffer(ib_Core* core, ib_BufferDesc desc)
         .RequiredFlags = desc.RequiredMemoryFlags,
         .PreferredFlags = desc.PreferredMemoryFlags,
         .TypeBits = memoryRequirements.memoryTypeBits,
+        .AllocationType = desc.AllocationType
     };
 
     buffer.Allocation = iba_gpuAlloc(&core->Allocator, request);

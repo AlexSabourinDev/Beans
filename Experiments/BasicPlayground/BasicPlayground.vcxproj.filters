@@ -28,6 +28,12 @@
     <Filter Include="cgltf">
       <UniqueIdentifier>{0b3c3577-d83a-4efe-ae34-26545ac389c9}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Cranberries">
+      <UniqueIdentifier>{5fb400b8-8af2-4a3b-bad7-0cc71d3b9dfc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Iceberg\Shaders">
+      <UniqueIdentifier>{1c204734-523b-4fb8-b64c-a128a259e527}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_allocator.h">
@@ -156,5 +162,28 @@
     <ClInclude Include="..\..\cgltf\Include\cgltf\cgltf.h">
       <Filter>cgltf</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Cranberries\Include\cranberries\cranberry_math.h">
+      <Filter>Cranberries</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="..\..\Iceberg\Shaders\ib_brdf.hsh">
+      <Filter>Iceberg\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\..\Iceberg\Shaders\ib_encodings.hsh">
+      <Filter>Iceberg\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\..\Iceberg\Shaders\ib_math.hsh">
+      <Filter>Iceberg\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\..\Iceberg\Shaders\ib_sampler.hsh">
+      <Filter>Iceberg\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\..\Iceberg\Shaders\ib_spherical_harmonics.hsh">
+      <Filter>Iceberg\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\..\Iceberg\Shaders\vulkan.hsh">
+      <Filter>Iceberg\Shaders</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>
