@@ -32,6 +32,7 @@ PFN_vkGetBufferDeviceAddressKHR ib_vkGetBufferDeviceAddressKHR;
 PFN_vkSetDebugUtilsObjectNameEXT ib_vkSetDebugUtilsObjectNameEXT;
 PFN_vkCmdBeginDebugUtilsLabelEXT ib_vkCmdBeginDebugUtilsLabelEXT;
 PFN_vkCmdEndDebugUtilsLabelEXT ib_vkCmdEndDebugUtilsLabelEXT;
+PFN_vkCmdBindDescriptorSets2KHR ib_vkCmdBindDescriptorSets2KHR;
 
 VkResult vkCreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* createInfo, const VkAllocationCallbacks* allocator, VkDebugUtilsMessengerEXT* debugMessenger)
 {
@@ -141,6 +142,16 @@ void vkCmdEndDebugUtilsLabelEXT(VkCommandBuffer commandBuffer)
     }
 }
 
+VKAPI_ATTR void VKAPI_CALL vkCmdBindDescriptorSets2KHR(
+    VkCommandBuffer commandBuffer,
+    const VkBindDescriptorSetsInfoKHR*          pBindDescriptorSetsInfo)
+{
+    if (ib_vkCmdBindDescriptorSets2KHR != NULL)
+    {
+        ib_vkCmdBindDescriptorSets2KHR(commandBuffer, pBindDescriptorSetsInfo);
+    }
+}
+
 #define ib_getVulkanFunc(instance, funcName) (PFN_ ## funcName) vkGetInstanceProcAddr(instance, #funcName)
 
 void ib_loadVulkanFunctions(VkInstance instance)
@@ -154,6 +165,7 @@ void ib_loadVulkanFunctions(VkInstance instance)
     ib_vkSetDebugUtilsObjectNameEXT = ib_getVulkanFunc(instance, vkSetDebugUtilsObjectNameEXT);
     ib_vkCmdBeginDebugUtilsLabelEXT = ib_getVulkanFunc(instance, vkCmdBeginDebugUtilsLabelEXT);
     ib_vkCmdEndDebugUtilsLabelEXT = ib_getVulkanFunc(instance, vkCmdEndDebugUtilsLabelEXT);
+    ib_vkCmdBindDescriptorSets2KHR = ib_getVulkanFunc(instance, vkCmdBindDescriptorSets2KHR);
 }
 
 ib_timelineSemaphore ib_allocTimelineSemaphore(ib_Core* core, uint64_t initialValue)
@@ -1007,7 +1019,7 @@ ib_Texture ib_allocTexture(ib_Core* core, ib_TextureDesc desc)
     ib_Texture texture =
     {
         .Aspect = desc.Aspect,
-        .Extent = desc.Extent,
+        .Extent = (VkExtent3D) { desc.Extent.width, desc.Extent.height, ib_max(desc.Extent.depth, 1u) },
         .Format = desc.Format,
         .MipCount = desc.MipCount,
         .LayerCount = desc.LayerCount

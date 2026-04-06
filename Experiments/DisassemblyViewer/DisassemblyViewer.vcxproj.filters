@@ -105,7 +105,4 @@
     </ClInclude>
     <ClInclude Include="ib_imgui.h" />
   </ItemGroup>
-  <ItemGroup>
-    <None Include="Backends\AmdLLPC.py" />
-  </ItemGroup>
 </Project>

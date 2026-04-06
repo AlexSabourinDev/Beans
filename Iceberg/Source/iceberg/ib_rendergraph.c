@@ -20,6 +20,7 @@
 #define list_pushAlloc(out, type, list) \
 	{ \
 		type* _transient = (type *)ibr_allocTransientMemory(graph, sizeof(type)); \
+		memset(_transient, 0u, sizeof(type)); \
 		list_push(list, _transient); \
 		out = _transient; \
 	}
@@ -295,16 +296,19 @@ void ibr_freeRenderGraphPool(ib_Core* core, ibr_RenderGraphPool* pool)
 		{
 			ib_freeTexture(graph->Core, &iter->Texture);
 		}
+		graph->TransientTextures = NULL;
 
 		for (ibr_TransientBuffer* iter = graph->TransientBuffers; iter != NULL; iter = iter->Next)
 		{
 			ib_freeBuffer(graph->Core, &iter->Buffer);
 		}
+		graph->TransientBuffers = NULL;
 
 		for (ibr_TransientImageView* iter = graph->TransientImageViews; iter != NULL; iter = iter->Next)
 		{
 			vkDestroyImageView(graph->Core->LogicalDevice, iter->View, ib_NoVkAllocator);
 		}
+		graph->TransientImageViews = NULL;
 
 		vkDestroyDescriptorPool(core->LogicalDevice, graph->TransientDescriptorPool, ib_NoVkAllocator);
 
@@ -332,16 +336,19 @@ ibr_RenderGraph* ibr_beginFrame(ibr_RenderGraphPool* pool, ibr_BeginFrameDesc de
 	{
 		ib_freeTexture(graph->Core, &head->Texture);
 	}
+	graph->TransientTextures = NULL;
 
 	for (ibr_TransientBuffer* head = graph->TransientBuffers; head != NULL; head = head->Next)
 	{
 		ib_freeBuffer(graph->Core, &head->Buffer);
 	}
+	graph->TransientBuffers = NULL;
 
 	for (ibr_TransientImageView* iter = graph->TransientImageViews; iter != NULL; iter = iter->Next)
 	{
 		vkDestroyImageView(graph->Core->LogicalDevice, iter->View, ib_NoVkAllocator);
 	}
+	graph->TransientImageViews = NULL;
 
 	vkResetDescriptorPool(graph->Core->LogicalDevice, graph->TransientDescriptorPool, 0);
 	for (uint32_t q = 0; q < ib_Queue_Count; q++)
