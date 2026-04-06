@@ -19,6 +19,8 @@ extern "C"
 #define ib_unused(a) (a)
 #define ib_stringify(...) #__VA_ARGS__
 
+#define alignof __alignof
+
 #ifdef IB_DEBUG
 
 #if !defined(ib_assert)

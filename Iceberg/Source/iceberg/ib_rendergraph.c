@@ -19,7 +19,7 @@
 
 #define list_pushAlloc(out, type, list) \
 	{ \
-		type* _transient = (type *)ibr_allocTransientMemory(graph, sizeof(type)); \
+		type* _transient = (type *)ibr_allocTransientMemory(graph, sizeof(type), alignof(type)); \
 		memset(_transient, 0u, sizeof(type)); \
 		list_push(list, _transient); \
 		out = _transient; \
@@ -119,7 +119,7 @@ static void createPipelineBarriers(ibr_RenderGraph* graph, CreatePipelineBarrier
 	VkImageMemoryBarrier2* imageBarriers = *desc.OutImageBarriers;
 	if (imageBarriers == NULL)
 	{
-		imageBarriers = (VkImageMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkImageMemoryBarrier2) * imageBarrierCount);
+		imageBarriers = (VkImageMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkImageMemoryBarrier2) * imageBarrierCount, alignof(VkImageMemoryBarrier2));
 	}
 	else
 	{
@@ -130,7 +130,7 @@ static void createPipelineBarriers(ibr_RenderGraph* graph, CreatePipelineBarrier
 	VkBufferMemoryBarrier2* memoryBarriers = *desc.OutMemoryBarriers;
 	if (memoryBarriers == NULL)
 	{
-		memoryBarriers = (VkBufferMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkBufferMemoryBarrier2) * memoryBarrierCount);
+		memoryBarriers = (VkBufferMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkBufferMemoryBarrier2) * memoryBarrierCount, alignof(VkBufferMemoryBarrier2));
 	}
 	else
 	{
@@ -209,79 +209,136 @@ static void createPipelineBarriers(ibr_RenderGraph* graph, CreatePipelineBarrier
 	*desc.OutMemoryBarrierCount = memoryBarrierCount;
 }
 
-typedef struct
+typedef struct StackGpuMemoryPage
 {
-	iba_PageHeader Header;
-} CPUPage;
+    iba_PageHeader Header;
+    VkBuffer Buffer;
+    iba_GpuAllocation PageAlloc;
+} StackGpuMemoryPage;
+
+static iba_PageHeader* allocGpuMemoryPage(void* userData, size_t pageSize)
+{
+    // It would be fun to use the transient CPU allocator here.
+    // But we don't free the pages every frame. We just reset the head pointer.
+    StackGpuMemoryPage* page = calloc(1, sizeof(StackGpuMemoryPage));
+
+    iba_GpuAllocator* generalAllocator = (iba_GpuAllocator*)userData;
+    VkDevice logicalDevice = generalAllocator->LogicalDevice;
+    VkBufferCreateInfo bufferCreate =
+    {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = pageSize,
+        .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    };
+    ib_vkCheck(vkCreateBuffer(logicalDevice, &bufferCreate, ib_NoVkAllocator, &page->Buffer));
+
+    VkMemoryRequirements memoryRequirements;
+    vkGetBufferMemoryRequirements(logicalDevice, page->Buffer, &memoryRequirements);
+
+    page->PageAlloc = iba_gpuAlloc(generalAllocator, (iba_GpuAllocationRequest)
+                                   {
+                                       .Size = pageSize,
+                                       .Alignment = 0,
+                                       .TypeBits = memoryRequirements.memoryTypeBits,
+                                       .RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                   });
+
+    ib_vkCheck(vkBindBufferMemory(logicalDevice, page->Buffer, page->PageAlloc.Memory, page->PageAlloc.Offset));
+
+    return &page->Header;
+}
+
+static void freeGpuMemoryPage(void* userData, iba_PageHeader* pageHeader)
+{
+    iba_GpuAllocator* generalAllocator = (iba_GpuAllocator*)userData;
+    StackGpuMemoryPage* page = (StackGpuMemoryPage*)pageHeader;
+
+    vkDestroyBuffer(generalAllocator->LogicalDevice, page->Buffer, ib_NoVkAllocator);
+    iba_gpuFree(generalAllocator, &page->PageAlloc);
+    free(page);
+}
 
 ibr_RenderGraphPool ibr_allocRenderGraphPool(ib_Core* core)
 {
-	ibr_RenderGraphPool pool = (ibr_RenderGraphPool) { 0 };
-	for (uint32_t i = 0; i < ib_FramebufferCount; i++)
-	{
-		pool.Graphs[i].Core = core;
+    ibr_RenderGraphPool pool = (ibr_RenderGraphPool) { 0 };
+    for (uint32_t i = 0; i < ib_FramebufferCount; i++)
+    {
+        pool.Graphs[i].Core = core;
 
-		static size_t const fullPageSize = 1024 * 1024;
-		iba_initCpuStackAllocator((iba_CpuStackAllocatorDesc)
-							{
-								.PageSize = fullPageSize
-							}, &pool.Graphs[i].FrameCPUStack);
+        static size_t const fullCpuPageSize = 1024 * 1024;
+        iba_initCpuStackAllocator((iba_CpuStackAllocatorDesc)
+                                  {
+                                      .PageSize = fullCpuPageSize
+                                  }, &pool.Graphs[i].FrameCPUStack);
 
-		ib_initTimerManager((ib_TimerManagerDesc)
-							{
-								.Core = core,
-								.MaxTimerCount = 1024,
-							}, &pool.Graphs[i].TimerManager);
+        uint32_t const transientGpuPageSize = 1024 * 1024; // 10MB pages seems large :thinking:
+        iba_initStackAllocator((iba_StackAllocatorDesc)
+                            {
+                                .PageAllocator =
+                                {
+                                    .AllocPage = &allocGpuMemoryPage,
+                                    .FreePage = &freeGpuMemoryPage,
+                                    .UserData = &core->Allocator
+                                },
+                                .PageSize = transientGpuPageSize
+                            },
+                            &pool.Graphs[i].FrameGPUStack);
 
-		// Create the descriptor pools
-		{
-			uint32_t const maxTransientDescriptorTypeCount = 128;
-			uint32_t const maxTransientDescriptorSetCount = 128;
-			VkDescriptorPoolSize descriptorPoolSizes[] =
-			{
-				{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, maxTransientDescriptorTypeCount },
-				{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, maxTransientDescriptorTypeCount },
-				{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, maxTransientDescriptorTypeCount },
-				{ VK_DESCRIPTOR_TYPE_SAMPLER, maxTransientDescriptorTypeCount },
-				{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTransientDescriptorTypeCount },
-			};
+        ib_initTimerManager((ib_TimerManagerDesc)
+                            {
+                                .Core = core,
+                                .MaxTimerCount = 1024,
+                            }, &pool.Graphs[i].TimerManager);
 
-			VkDescriptorPoolCreateInfo descriptorPoolCreate =
-			{
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-				.flags = 0,
-				.maxSets = maxTransientDescriptorSetCount,
-				.poolSizeCount = ib_arrayCount(descriptorPoolSizes),
-				.pPoolSizes = descriptorPoolSizes
-			};
+        // Create the descriptor pools
+        {
+            uint32_t const maxTransientDescriptorTypeCount = 128;
+            uint32_t const maxTransientDescriptorSetCount = 128;
+            VkDescriptorPoolSize descriptorPoolSizes[] =
+            {
+                { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, maxTransientDescriptorTypeCount },
+                { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, maxTransientDescriptorTypeCount },
+                { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, maxTransientDescriptorTypeCount },
+                { VK_DESCRIPTOR_TYPE_SAMPLER, maxTransientDescriptorTypeCount },
+                { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTransientDescriptorTypeCount },
+            };
 
-			ib_vkCheck(vkCreateDescriptorPool(core->LogicalDevice, &descriptorPoolCreate, ib_NoVkAllocator, &pool.Graphs[i].TransientDescriptorPool));
-		}
+            VkDescriptorPoolCreateInfo descriptorPoolCreate =
+            {
+                .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+                .flags = 0,
+                .maxSets = maxTransientDescriptorSetCount,
+                .poolSizeCount = ib_arrayCount(descriptorPoolSizes),
+                .pPoolSizes = descriptorPoolSizes
+            };
 
-		for (uint32_t q = 0; q < ib_Queue_Count; q++)
-		{
-			VkCommandPoolCreateInfo commandPoolCreateInfo =
-			{
-				.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-				.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
-				.queueFamilyIndex = core->Queues[q].Index,
-			};
+            ib_vkCheck(vkCreateDescriptorPool(core->LogicalDevice, &descriptorPoolCreate, ib_NoVkAllocator, &pool.Graphs[i].TransientDescriptorPool));
+        }
 
-			ib_vkCheck(vkCreateCommandPool(core->LogicalDevice, &commandPoolCreateInfo, ib_NoVkAllocator, &pool.Graphs[i].TransientCommandPools[q]));
-		}
+        for (uint32_t q = 0; q < ib_Queue_Count; q++)
+        {
+            VkCommandPoolCreateInfo commandPoolCreateInfo =
+            {
+                .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+                .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+                .queueFamilyIndex = core->Queues[q].Index,
+            };
 
-		ib_vkCheck(vkCreateSemaphore(core->LogicalDevice, &(VkSemaphoreCreateInfo)
-									{
-										.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
-									}, ib_NoVkAllocator, &pool.Graphs[i].FrameSemaphore));
+            ib_vkCheck(vkCreateCommandPool(core->LogicalDevice, &commandPoolCreateInfo, ib_NoVkAllocator, &pool.Graphs[i].TransientCommandPools[q]));
+        }
 
-		ib_vkCheck(vkCreateFence(core->LogicalDevice, &(VkFenceCreateInfo)
-								{
-									.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-									.flags = VK_FENCE_CREATE_SIGNALED_BIT
-								}, ib_NoVkAllocator, &pool.Graphs[i].FrameFence));
-	}
-	return pool;
+        ib_vkCheck(vkCreateSemaphore(core->LogicalDevice, &(VkSemaphoreCreateInfo)
+                                     {
+                                         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
+                                     }, ib_NoVkAllocator, &pool.Graphs[i].FrameSemaphore));
+
+        ib_vkCheck(vkCreateFence(core->LogicalDevice, &(VkFenceCreateInfo)
+                                 {
+                                     .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+                                     .flags = VK_FENCE_CREATE_SIGNALED_BIT
+                                 }, ib_NoVkAllocator, &pool.Graphs[i].FrameFence));
+    }
+    return pool;
 }
 
 void ibr_freeRenderGraphPool(ib_Core* core, ibr_RenderGraphPool* pool)
@@ -321,6 +378,7 @@ void ibr_freeRenderGraphPool(ib_Core* core, ibr_RenderGraphPool* pool)
 		vkDestroySemaphore(core->LogicalDevice, graph->FrameSemaphore, ib_NoVkAllocator);
 
 		ib_killTimerManager(core, &graph->TimerManager);
+        iba_killStackAllocator(&graph->FrameGPUStack);
 		iba_killStackAllocator(&graph->FrameCPUStack);
 	}
 }
@@ -423,90 +481,255 @@ void ibr_endFrame(ibr_RenderGraphPool* pool, ibr_RenderGraph* graph)
 	ib_assert(graph->ActiveProfilingScopes == NULL);
 }
 
-void* ibr_allocTransientMemory(ibr_RenderGraph* graph, size_t size)
+void* ibr_allocTransientMemory(ibr_RenderGraph* graph, size_t size, size_t alignment)
 {
-	iba_StackAllocation allocation = iba_stackAlloc(&graph->FrameCPUStack, (iba_StackAllocationRequest) { size });
-	return iba_cpuStackAllocToMemory(allocation);
+    iba_StackAllocation allocation = iba_stackAlloc(&graph->FrameCPUStack, (iba_StackAllocationRequest) { size, alignment });
+    return iba_cpuStackAllocToMemory(allocation);
 }
 
-ibr_Resource ibr_allocPassResource(ibr_RenderGraph* graph, ibr_ResourceDesc resourceDesc)
+ibr_TransientGpuMemory ibr_allocTransientGpuMemory(ibr_RenderGraph* graph, size_t size, size_t alignment)
 {
-	ibr_Resource outResource = (ibr_Resource) { 0 };
-	outResource.Type = resourceDesc.Type;
-	outResource.LastReleaseStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-	if (resourceDesc.Type == ibr_ResourceType_Texture)
-	{
-		outResource.TextureLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		if ((resourceDesc.Flags & ibr_ResourceFlag_Transient) != 0)
-		{
-			ib_TextureDesc textureDesc = resourceDesc.TextureDesc;
-			if (memcmp(&textureDesc.Extent, &ibr_ScreenExtent, sizeof(VkExtent2D)) == 0)
-			{
-				textureDesc.Extent = (VkExtent3D) { graph->ScreenExtent.width, graph->ScreenExtent.height };
-			}
-
-			ibr_TransientTexture* transientTexture;
-			list_pushAlloc(transientTexture, ibr_TransientTexture, &graph->TransientTextures);
-			ib_Texture* texture = &transientTexture->Texture;
-
-			*texture = ib_allocTexture(graph->Core, textureDesc);
-
-			// We just wrote to our texture, its layout will be transfer dest.
-			if (textureDesc.InitialWrite.Data != NULL)
-			{
-				outResource.TextureLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
-			}
-
-			outResource.Texture = texture;
-		}
-		else
-		{
-			outResource.Texture = resourceDesc.Texture;
-		}
-	}
-	else if (resourceDesc.Type == ibr_ResourceType_Buffer)
-	{
-		if ((resourceDesc.Flags & ibr_ResourceFlag_Transient) != 0)
-		{
-			ib_BufferDesc bufferDesc = resourceDesc.BufferDesc;
-
-			ibr_TransientBuffer* transientBuffer;
-			list_pushAlloc(transientBuffer, ibr_TransientBuffer, &graph->TransientBuffers);
-			ib_Buffer* buffer = &transientBuffer->Buffer;
-
-			*buffer = ib_allocBuffer(graph->Core, bufferDesc);
-
-			outResource.Buffer = buffer;
-		}
-		else
-		{
-			outResource.Buffer = resourceDesc.Buffer;
-		}
-	}
-
-	return outResource;
+    iba_StackAllocation allocation = iba_stackAlloc(&graph->FrameGPUStack, (iba_StackAllocationRequest) { size, alignment });
+    StackGpuMemoryPage* gpuPage = (StackGpuMemoryPage*)allocation.Page;
+    return (ibr_TransientGpuMemory)
+    {
+        .CpuMemory = (uint8_t*)gpuPage->PageAlloc.CPUMemory + allocation.Offset,
+        .Buffer = gpuPage->Buffer,
+        .BufferOffset = allocation.Offset
+    };
 }
 
-void ibr_allocPassResources(ibr_RenderGraph* graph, ibr_AllocPassResourcesDesc desc)
+ibr_Resource ibr_allocPassResource(VkCommandBuffer commands, ibr_RenderGraph* graph, ibr_ResourceDesc resourceDesc)
 {
-	ibr_AllocResourceBinding* iter = ib_srangeBegin(desc.ResourceBindings);
-	ibr_AllocResourceBinding* end = ib_srangeEnd(desc.ResourceBindings);
-	for (; iter != end; iter++)
-	{
-		if(iter->OutResource == NULL)
-		{
-			break;
-		}
+    ibr_Resource outResource = (ibr_Resource) { 0 };
+    ibr_allocPassResources(commands, graph, (ibr_AllocPassResourcesDesc)
+                           {
+                               .ResourceBindings =
+                               {
+                                   &outResource,
+                                   resourceDesc
+                               }
+                           });
 
-		ibr_ResourceDesc resourceDesc = iter->Desc;
-		ibr_Resource* outResource = iter->OutResource;
-		*outResource = ibr_allocPassResource(graph, resourceDesc);
-	}
+    return outResource;
+}
 
-	for (; iter != end; iter++)
-	{
-		ib_assert(iter->OutResource == NULL);
-	}
+void ibr_allocPassResources(VkCommandBuffer commands, ibr_RenderGraph* graph, ibr_AllocPassResourcesDesc desc)
+{
+    uint32_t transientWriteCount = 0u;
+
+    ibr_AllocResourceBinding* head = ib_srangeBegin(desc.ResourceBindings);
+    ibr_AllocResourceBinding* end = ib_srangeEnd(desc.ResourceBindings);
+
+    for (ibr_AllocResourceBinding* iter = head; iter != end; iter++)
+    {
+        if (iter->OutResource == NULL)
+        {
+            break;
+        }
+
+        if (iter->Desc.Flags == ibr_ResourceFlag_Transient &&
+            (iter->Desc.TextureDesc.InitialWrite.Data != NULL ||
+                iter->Desc.BufferDesc.InitialWrite.Data != NULL))
+        {
+            transientWriteCount++;
+        }
+    }
+
+    typedef struct
+    {
+        ibr_Resource* Resource;
+        ib_WriteData WriteData;
+    } TransientWrite;
+
+    uint32_t writeIndex = 0;
+    TransientWrite* writes = (TransientWrite*)ibr_allocTransientMemory(graph, transientWriteCount * sizeof(TransientWrite), alignof(TransientWrite));
+
+    for (ibr_AllocResourceBinding* iter = head; iter != end; iter++)
+    {
+        if (iter->OutResource == NULL)
+        {
+            break;
+        }
+
+        ibr_ResourceDesc resourceDesc = iter->Desc;
+        ibr_Resource* outResource = iter->OutResource;
+        *outResource = (ibr_Resource) { 0 };
+        outResource->Type = resourceDesc.Type;
+
+        if (resourceDesc.Type == ibr_ResourceType_Texture)
+        {
+            outResource->TextureLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            if ((resourceDesc.Flags & ibr_ResourceFlag_Transient) != 0)
+            {
+                ib_TextureDesc textureDesc = resourceDesc.TextureDesc;
+                if (memcmp(&textureDesc.Extent, &ibr_ScreenExtent, sizeof(VkExtent2D)) == 0)
+                {
+                    textureDesc.Extent = (VkExtent3D) { graph->ScreenExtent.width, graph->ScreenExtent.height };
+                }
+
+                ibr_TransientTexture* transientTexture;
+                list_pushAlloc(transientTexture, ibr_TransientTexture, &graph->TransientTextures);
+                ib_Texture* texture = &transientTexture->Texture;
+
+                ib_WriteData writeDesc = textureDesc.InitialWrite;
+                bool writeToTexture = (writeDesc.Size > 0u);
+                // If we're writting to our texture, and the initial layout is undefined, set it to read.
+                if (writeToTexture)
+                {
+                    // We only support undefined or transfer dst for our initial layout if we're writting to the texture.
+                    ib_assert(textureDesc.InitialLayout == VK_IMAGE_LAYOUT_UNDEFINED || textureDesc.InitialLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+                    textureDesc.InitialLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                }
+
+                // TODO: Remove this initial write API.
+                textureDesc.InitialWrite = (ib_WriteData) { 0 };
+                *texture = ib_allocTexture(graph->Core, textureDesc);
+
+                if (writeToTexture)
+                {
+                    writes[writeIndex++] = (TransientWrite)
+                    {
+                        .Resource = outResource,
+                        .WriteData = writeDesc
+                    };
+                }
+
+                outResource->Texture = texture;
+            }
+            else
+            {
+                outResource->Texture = resourceDesc.Texture;
+            }
+        }
+        else if (resourceDesc.Type == ibr_ResourceType_Buffer)
+        {
+            if ((resourceDesc.Flags & ibr_ResourceFlag_Transient) != 0)
+            {
+                ib_BufferDesc bufferDesc = resourceDesc.BufferDesc;
+
+                ibr_TransientBuffer* transientBuffer;
+                list_pushAlloc(transientBuffer, ibr_TransientBuffer, &graph->TransientBuffers);
+                ib_Buffer* buffer = &transientBuffer->Buffer;
+
+                // TODO: Remove this initial write API.
+                ib_WriteData writeDesc = bufferDesc.InitialWrite;
+                bufferDesc.InitialWrite = (ib_WriteData) { 0 };
+                *buffer = ib_allocBuffer(graph->Core, bufferDesc);
+
+                if (writeDesc.Size > 0u)
+                {
+                    writes[writeIndex++] = (TransientWrite)
+                    {
+                        .Resource = outResource,
+                        .WriteData = writeDesc
+                    };
+                }
+
+                outResource->Buffer = buffer;
+            }
+            else
+            {
+                outResource->Buffer = resourceDesc.Buffer;
+            }
+        }
+    }
+
+    uint32_t writeCount = writeIndex;
+    ib_assert(writeCount <= transientWriteCount);
+
+    // Single memory barrier for all our staging GPU writes.
+    if (writeCount > 0u)
+    {
+        // Make sure our memory write to host memory is visible with a memory barrier.
+        VkMemoryBarrier2 memoryBarrier =
+        {
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+            .srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT,
+            .srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
+        };
+
+        // No need for an image barrier. We create the texture with the right initial layout.
+        vkCmdPipelineBarrier2(commands, &(VkDependencyInfo)
+                            {
+                                .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                                .memoryBarrierCount = 1,
+                                .pMemoryBarriers = &memoryBarrier
+                            });
+    }
+
+    // Do all our writes in one go.
+    for (uint32_t i = 0; i < writeCount; i++)
+    {
+        if (writes[i].Resource->Type == ibr_ResourceType_Texture)
+        {
+            ib_Texture* texture = writes[i].Resource->Texture;
+            ibr_TransientGpuMemory gpuMemory = ibr_allocTransientGpuMemory(graph, writes[i].WriteData.Size, writes[i].WriteData.Alignment);
+            memcpy(gpuMemory.CpuMemory, writes[i].WriteData.Data, writes[i].WriteData.Size);
+
+            // Image copy
+            {
+                VkBufferImageCopy copyRegion =
+                {
+                    .bufferOffset = gpuMemory.BufferOffset,
+                    .bufferRowLength = 0,
+                    .bufferImageHeight = 0,
+                    .imageSubresource =
+                    {
+                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .mipLevel = 0,
+                        .baseArrayLayer = 0,
+                        .layerCount = ib_max(texture->LayerCount, 1u),
+                    },
+                    .imageOffset = { 0 },
+                    .imageExtent =
+                    {
+                        .width = texture->Extent.width,
+                        .height = texture->Extent.height,
+                        .depth = 1,
+                    },
+                };
+
+                vkCmdCopyBufferToImage(commands, gpuMemory.Buffer, texture->Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+            }
+
+            writes[i].Resource->LastReleaseStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+            writes[i].Resource->LastReleaseAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            writes[i].Resource->TextureLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        }
+        else if (writes[i].Resource->Type == ibr_ResourceType_Buffer)
+        {
+            ib_Buffer* buffer = writes[i].Resource->Buffer;
+            if (buffer->Allocation.CPUMemory != NULL)
+            {
+                memcpy(buffer->Allocation.CPUMemory, writes[i].WriteData.Data, writes[i].WriteData.Size);
+                writes[i].Resource->LastReleaseStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+                writes[i].Resource->LastReleaseAccessMask = VK_ACCESS_2_HOST_WRITE_BIT;
+            }
+            else
+            {
+                ibr_TransientGpuMemory gpuMemory = ibr_allocTransientGpuMemory(graph, writes[i].WriteData.Size, writes[i].WriteData.Alignment);
+                memcpy(gpuMemory.CpuMemory, writes[i].WriteData.Data, writes[i].WriteData.Size);
+
+                // Buffer copy
+                {
+                    VkBufferCopy copyRegion =
+                    {
+                        .srcOffset = gpuMemory.BufferOffset,
+                        .dstOffset = 0u,
+                        .size = writes[i].WriteData.Size
+                    };
+
+                    vkCmdCopyBuffer(commands, gpuMemory.Buffer, buffer->VulkanBuffer, 1, &copyRegion);
+                }
+
+                writes[i].Resource->LastReleaseStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+                writes[i].Resource->LastReleaseAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            }
+        }
+    }
 }
 
 VkImageView ibr_allocTransientImageView(ibr_RenderGraph* graph, ibr_AllocTransientImageViewDesc desc)
@@ -549,7 +772,7 @@ ib_ShaderInput ibr_resourcesToShaderInput(ibr_RenderGraph* graph, ibr_ResourceTo
 {
 	ib_assert(desc.Resources.Count <= desc.ShaderInputs.Count); // Can't have more resources than inputs
 
-	ib_ShaderInputWrite* writes = (ib_ShaderInputWrite*)ibr_allocTransientMemory(graph, desc.Resources.Count * sizeof(ib_ShaderInputWrite));
+	ib_ShaderInputWrite* writes = (ib_ShaderInputWrite*)ibr_allocTransientMemory(graph, desc.Resources.Count * sizeof(ib_ShaderInputWrite), alignof(ib_ShaderInputWrite));
 
 	uint32_t writeCount = 0;
 	for (uint32_t i = 0; i < desc.Resources.Count; i++)
@@ -595,7 +818,7 @@ VkCommandBuffer ibr_allocTransientCommandBuffer(ibr_RenderGraph* graph, ib_Queue
 void ibr_submitCommandBuffers(ibr_RenderGraph* graph, ibr_SubmitCommandBufferDesc desc)
 {
 	uint32_t maxCommandCount = ib_srangeCapacity(desc.CommandBuffers);
-	VkCommandBufferSubmitInfo* commands = (VkCommandBufferSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkCommandBufferSubmitInfo) * maxCommandCount);
+	VkCommandBufferSubmitInfo* commands = (VkCommandBufferSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkCommandBufferSubmitInfo) * maxCommandCount, alignof(VkCommandBufferSubmitInfo));
 	uint32_t commandCount = 0;
 	for (VkCommandBuffer* iter = ib_srangeBegin(desc.CommandBuffers),
 		*end = ib_srangeEnd(desc.CommandBuffers); iter != end; iter++)
@@ -613,7 +836,7 @@ void ibr_submitCommandBuffers(ibr_RenderGraph* graph, ibr_SubmitCommandBufferDes
 	}
 
 	uint32_t maxWaitSemaphores = ib_srangeCapacity(desc.WaitSemaphores);
-	VkSemaphoreSubmitInfo* waitSemaphores = (VkSemaphoreSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkSemaphoreSubmitInfo) * maxWaitSemaphores);
+	VkSemaphoreSubmitInfo* waitSemaphores = (VkSemaphoreSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkSemaphoreSubmitInfo) * maxWaitSemaphores, alignof(VkSemaphoreSubmitInfo));
 	uint32_t waitSemaphoreCount = 0;
 	for (VkSemaphore* iter = ib_srangeBegin(desc.WaitSemaphores),
 		*end = ib_srangeEnd(desc.WaitSemaphores); iter != end; iter++)
@@ -632,7 +855,7 @@ void ibr_submitCommandBuffers(ibr_RenderGraph* graph, ibr_SubmitCommandBufferDes
 	}
 
 	uint32_t maxSignalSemaphores = ib_srangeCapacity(desc.SignalSemaphores);
-	VkSemaphoreSubmitInfo* signalSemaphores = (VkSemaphoreSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkSemaphoreSubmitInfo) * maxSignalSemaphores);
+	VkSemaphoreSubmitInfo* signalSemaphores = (VkSemaphoreSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkSemaphoreSubmitInfo) * maxSignalSemaphores, alignof(VkSemaphoreSubmitInfo));
 	uint32_t signalSemaphoreCount = 0;
 	for (VkSemaphore* iter = ib_srangeBegin(desc.SignalSemaphores),
 		*end = ib_srangeEnd(desc.SignalSemaphores); iter != end; iter++)
@@ -702,8 +925,8 @@ void ibr_beginGraphicsPass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_Begi
 		}
 
 		// Transition for write
-		VkImageMemoryBarrier2* imageMemoryBarriers = (VkImageMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkImageMemoryBarrier2) * totalResourceCount);
-		VkBufferMemoryBarrier2* memoryBarriers = (VkBufferMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkBufferMemoryBarrier2) * totalResourceCount);
+		VkImageMemoryBarrier2* imageMemoryBarriers = (VkImageMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkImageMemoryBarrier2) * totalResourceCount, alignof(VkImageMemoryBarrier2));
+		VkBufferMemoryBarrier2* memoryBarriers = (VkBufferMemoryBarrier2*)ibr_allocTransientMemory(graph, sizeof(VkBufferMemoryBarrier2) * totalResourceCount, alignof(VkBufferMemoryBarrier2));
 
 		uint32_t imageBarrierCount = totalResourceCount;
 		uint32_t memoryBarrierCount = totalResourceCount;
@@ -793,7 +1016,7 @@ void ibr_beginGraphicsPass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_Begi
 	// Attachments
 	{
 		uint32_t colorAttachmentWrite = 0;
-		VkRenderingAttachmentInfo* colorAttachments = (VkRenderingAttachmentInfo*)ibr_allocTransientMemory(graph, sizeof(VkRenderingAttachmentInfo) * renderTargetCount);
+		VkRenderingAttachmentInfo* colorAttachments = (VkRenderingAttachmentInfo*)ibr_allocTransientMemory(graph, sizeof(VkRenderingAttachmentInfo) * renderTargetCount, alignof(VkRenderingAttachmentInfo));
 		for (ibr_RenderTargetState* iter = renderTargetBegin,
 			*end = renderTargetBegin + renderTargetCount; iter != end; iter++)
 		{

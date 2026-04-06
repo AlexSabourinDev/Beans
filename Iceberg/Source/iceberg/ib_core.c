@@ -1051,7 +1051,7 @@ ib_Texture ib_allocTexture(ib_Core* core, ib_TextureDesc desc)
             .samples = VK_SAMPLE_COUNT_1_BIT,
             .tiling = VK_IMAGE_TILING_OPTIMAL,
             .usage = desc.Usage,
-            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .initialLayout = desc.InitialLayout,
             .sharingMode = queueFamilyCount > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE, // TODO: Investigate making these exclusive and managing queue ownership.
             .queueFamilyIndexCount = queueFamilyCount,
             .pQueueFamilyIndices = queueFamilies,
@@ -1442,7 +1442,6 @@ ib_Buffer ib_allocBuffer(ib_Core* core, ib_BufferDesc desc)
                              .Data = desc.InitialWrite.Data,
                              .Size = desc.InitialWrite.Size == VK_WHOLE_SIZE ? desc.Size : desc.InitialWrite.Size,
                              .Alignment = desc.InitialWrite.Alignment,
-                             .WriteOffset = desc.InitialWrite.WriteOffset
                          });
     }
 

@@ -151,6 +151,13 @@ typedef struct
 
 typedef struct
 {
+    void const* Data;
+    size_t Size;
+    size_t Alignment;
+} ib_WriteData;
+
+typedef struct
+{
     VkImageUsageFlags Usage;
     VkFormat Format;
     VkExtent3D Extent;
@@ -158,12 +165,8 @@ typedef struct
     uint32_t MipCount;
     uint32_t LayerCount;
     char const* DebugName;
-    struct
-    {
-        void const* Data;
-        size_t Size;
-        size_t Alignment;
-    } InitialWrite;
+    VkImageLayout InitialLayout;
+    ib_WriteData InitialWrite;
 } ib_TextureDesc;
 
 typedef struct
@@ -191,8 +194,8 @@ inline size_t ib_textureSize(ib_Texture const* texture, uint32_t mip)
 typedef struct
 {
     ib_Texture const* Texture;
-    VkAccessFlags SourceAccessMask;
-    VkAccessFlags DestAccessMask;
+    VkAccessFlags2 SourceAccessMask;
+    VkAccessFlags2 DestAccessMask;
     VkPipelineStageFlags2 SourceStageMask;
     VkPipelineStageFlags2 DestStageMask;
     VkImageLayout OldLayout;
@@ -220,13 +223,7 @@ typedef struct
     VkMemoryPropertyFlags PreferredMemoryFlags;
     char const* DebugName;
     iba_GpuAllocationType AllocationType;
-    struct
-    {
-        void const* Data;
-        size_t Size;
-        size_t Alignment;
-        size_t WriteOffset;
-    } InitialWrite;
+    ib_WriteData InitialWrite;
 } ib_BufferDesc;
 
 typedef struct

@@ -64,6 +64,8 @@ typedef struct ibr_RenderGraph
 {
     ib_Core* Core;
     iba_StackAllocator FrameCPUStack;
+    // Host local, device visible transient memory.
+    iba_StackAllocator FrameGPUStack;
 
     ibr_TransientTexture* TransientTextures;
     ibr_TransientBuffer* TransientBuffers;
@@ -104,7 +106,16 @@ typedef struct
 ibr_RenderGraph* ibr_beginFrame(ibr_RenderGraphPool* pool, ibr_BeginFrameDesc desc);
 void ibr_endFrame(ibr_RenderGraphPool* pool, ibr_RenderGraph* graph);
 
-void* ibr_allocTransientMemory(ibr_RenderGraph* graph, size_t size);
+void* ibr_allocTransientMemory(ibr_RenderGraph* graph, size_t size, size_t alignment);
+
+typedef struct
+{
+    void* CpuMemory;
+    VkBuffer Buffer;
+    size_t BufferOffset;
+} ibr_TransientGpuMemory;
+
+ibr_TransientGpuMemory ibr_allocTransientGpuMemory(ibr_RenderGraph* graph, size_t size, size_t alignment);
 
 enum
 {
@@ -136,8 +147,8 @@ typedef struct ibr_Resource
         ib_Buffer* Buffer;
     };
 
-    VkPipelineStageFlags LastReleaseStageMask;
-    VkAccessFlags LastReleaseAccessMask;
+    VkPipelineStageFlags2 LastReleaseStageMask;
+    VkAccessFlags2 LastReleaseAccessMask;
 } ibr_Resource;
 
 typedef struct
@@ -171,8 +182,8 @@ typedef struct
     uint32_t LayerIndex;
 } ibr_AllocTransientImageViewDesc;
 
-ibr_Resource ibr_allocPassResource(ibr_RenderGraph* graph, ibr_ResourceDesc resourceDesc);
-void ibr_allocPassResources(ibr_RenderGraph* graph, ibr_AllocPassResourcesDesc desc);
+ibr_Resource ibr_allocPassResource(VkCommandBuffer commands, ibr_RenderGraph* graph, ibr_ResourceDesc resourceDesc);
+void ibr_allocPassResources(VkCommandBuffer commands, ibr_RenderGraph* graph, ibr_AllocPassResourcesDesc desc);
 VkImageView ibr_allocTransientImageView(ibr_RenderGraph* graph, ibr_AllocTransientImageViewDesc desc);
 ib_ShaderInput ibr_allocTransientShaderInput(ibr_RenderGraph* graph, ib_AllocShaderInputDesc desc);
 VkCommandBuffer ibr_allocTransientCommandBuffer(ibr_RenderGraph* graph, ib_Queue queue);

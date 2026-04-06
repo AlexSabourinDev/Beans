@@ -10,11 +10,15 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#define alignof __alignof
-
 static ib_Core Core;
 static ibr_RenderGraphPool GraphPool;
 static ib_Surface Surface;
+
+static void* transientAlloc(iba_StackAllocator* allocator, size_t size, size_t alignment)
+{
+    iba_StackAllocation allocation = iba_stackAlloc(allocator, (iba_StackAllocationRequest){ size, alignment });
+    return iba_cpuStackAllocToMemory(allocation);
+}
 
 // Platform... stuff. I'd like to put this somewhere.
 // Maybe something line cranberry_platform
@@ -25,7 +29,7 @@ static void readWholeFileFromHandle(iba_StackAllocator* allocator, FILE* file, v
     long fileSize = ftell(file);
     fseek(file, 0, SEEK_SET);
 
-    *output = iba_cpuStackAllocToMemory(iba_stackAlloc(allocator, (iba_StackAllocationRequest) { fileSize }));
+    *output = transientAlloc(allocator, fileSize, 1u);
     *outputSize = fileSize;
 
     fread(*output, fileSize, 1, file);
@@ -53,12 +57,6 @@ typedef struct
     uint32_t PositionCount;
     uint32_t NormalCount;
 } MeshDesc;
-
-static void* transientAlloc(iba_StackAllocator* allocator, size_t size, size_t alignment)
-{
-    iba_StackAllocation allocation = iba_stackAlloc(allocator, (iba_StackAllocationRequest){ size, alignment });
-    return iba_cpuStackAllocToMemory(allocation);
-}
 
 static size_t const GlobalBufferMemorySize = 1024u * 1024u * 32u; // 32 MB of global buffer memory.
 static ib_Buffer GlobalBufferMemory;
@@ -295,7 +293,7 @@ static void update(void)
         ibr_Resource swapchainResource;
         ibr_Resource rasterizerParams;
         ibr_Resource renderOutput;
-        ibr_allocPassResources(graph, (ibr_AllocPassResourcesDesc)
+        ibr_allocPassResources(commands, graph, (ibr_AllocPassResourcesDesc)
                                {
                                    .ResourceBindings =
                                    {
