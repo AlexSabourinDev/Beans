@@ -13,5 +13,10 @@ struct RasterizerParams
 [numthreads(8,8,1)]
 void CS(uint2 aDispatchThreadId : SV_DispatchThreadId)
 {
+	if(any(aDispatchThreadId >= Params.OutputDimensions))
+	{
+		return;
+	}
+
 	Output[aDispatchThreadId] = float4(1.0f, 1.0f, 0.0f, 1.0f);
 }

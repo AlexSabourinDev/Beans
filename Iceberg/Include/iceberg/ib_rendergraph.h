@@ -60,7 +60,6 @@ typedef struct ibr_TransientScopeTiming
     struct ibr_TransientScopeTiming* Next;
 } ibr_TransientScopeTiming;
 
-#define ibr_MaxProfilingScopeCount 1024
 typedef struct ibr_RenderGraph
 {
     ib_Core* Core;
