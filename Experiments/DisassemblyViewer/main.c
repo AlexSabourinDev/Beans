@@ -121,7 +121,7 @@ static bool readWholeFile(char const* path, char** output, size_t* outputSize)
 }
 
 static ib_Core Core;
-static ibr_RenderGraphPool GraphPool;
+static ibr_RenderGraph Graphs[ib_FramebufferCount];
 static ib_Surface Surface;
 
 static char* DisassemblyStats = NULL;
@@ -168,7 +168,7 @@ static void init(void)
                 },
                 &Core);
 
-    GraphPool = ibr_allocRenderGraphPool(&Core);
+    ibr_initRenderGraphs(&Core, Graphs, ib_arrayCount(Graphs));
     Surface = ib_allocWin32Surface(&Core, (ib_SurfaceDesc)
                                    {
                                        .Win32WindowHandle = sapp_win32_get_hwnd(),
@@ -193,7 +193,7 @@ static void kill(void)
 
     imgui_kill();
     ib_freeSurface(&Core, &Surface);
-    ibr_freeRenderGraphPool(&Core, &GraphPool);
+    ibr_killRenderGraphs(&Core, Graphs, ib_arrayCount(Graphs));
     ib_killCore(&Core);
 }
 
@@ -325,18 +325,19 @@ static void update(void)
     igEnd();
 
     static uint32_t ActiveFrame = 0;
-    ibr_RenderGraph* graph = ibr_beginFrame(&GraphPool, (ibr_BeginFrameDesc)
+    ibr_RenderGraph* graph = &Graphs[ActiveFrame]; 
+    bool frameBegun = ibr_beginFrame(graph, (ibr_BeginFrameDesc)
                                             {
                                                 .FrameIndex = ActiveFrame,
                                                 .Surface = &Surface
                                             });
-    if (graph != NULL)
+    if (frameBegun)
     {
         VkCommandBuffer commands = ibr_allocTransientCommandBuffer(graph, ib_Queue_Graphics);
         ib_beginCommandBuffer(&Core, commands);
 
         ibr_Resource swapchainResource;
-        ibr_allocPassResources(graph, (ibr_AllocPassResourcesDesc)
+        ibr_allocPassResources(commands, graph, (ibr_AllocPassResourcesDesc)
                                {
                                    .ResourceBindings = (ibr_AllocResourceBinding)
                                    {
@@ -380,7 +381,7 @@ static void update(void)
                                  });
 
         ibr_present((ibr_PresentDesc) { &Surface, graph });
-        ibr_endFrame(&GraphPool, graph);
+        ibr_endFrame(graph);
     }
 
     ActiveFrame = (ActiveFrame + 1) % ib_FramebufferCount;

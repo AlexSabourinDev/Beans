@@ -89,13 +89,8 @@ typedef struct ibr_RenderGraph
     ibr_TransientScopeTiming* PreviousFrameTimings;
 } ibr_RenderGraph;
 
-typedef struct
-{
-    ibr_RenderGraph Graphs[ib_FramebufferCount];
-} ibr_RenderGraphPool;
-
-ibr_RenderGraphPool ibr_allocRenderGraphPool(ib_Core* core);
-void ibr_freeRenderGraphPool(ib_Core* core, ibr_RenderGraphPool* pool);
+void ibr_initRenderGraphs(ib_Core* core, ibr_RenderGraph* graphs, uint32_t graphCount);
+void ibr_killRenderGraphs(ib_Core* core, ibr_RenderGraph* graphs, uint32_t graphCount);
 
 typedef struct
 {
@@ -103,8 +98,8 @@ typedef struct
     ib_Surface* Surface;
 } ibr_BeginFrameDesc;
 
-ibr_RenderGraph* ibr_beginFrame(ibr_RenderGraphPool* pool, ibr_BeginFrameDesc desc);
-void ibr_endFrame(ibr_RenderGraphPool* pool, ibr_RenderGraph* graph);
+void ibr_beginFrame(ibr_RenderGraph* graph, ibr_BeginFrameDesc desc);
+void ibr_endFrame(ibr_RenderGraph* graph);
 
 void* ibr_allocTransientMemory(ibr_RenderGraph* graph, size_t size, size_t alignment);
 

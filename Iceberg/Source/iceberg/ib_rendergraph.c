@@ -258,18 +258,17 @@ static void freeGpuMemoryPage(void* userData, iba_PageHeader* pageHeader)
     free(page);
 }
 
-ibr_RenderGraphPool ibr_allocRenderGraphPool(ib_Core* core)
+void ibr_initRenderGraphs(ib_Core* core, ibr_RenderGraph* graphs, uint32_t graphCount)
 {
-    ibr_RenderGraphPool pool = (ibr_RenderGraphPool) { 0 };
-    for (uint32_t i = 0; i < ib_FramebufferCount; i++)
+    for (uint32_t i = 0; i < graphCount; i++)
     {
-        pool.Graphs[i].Core = core;
+        graphs[i].Core = core;
 
         static size_t const fullCpuPageSize = 1024 * 1024;
         iba_initCpuStackAllocator((iba_CpuStackAllocatorDesc)
                                   {
                                       .PageSize = fullCpuPageSize
-                                  }, &pool.Graphs[i].FrameCPUStack);
+                                  }, &graphs[i].FrameCPUStack);
 
         uint32_t const transientGpuPageSize = 1024 * 1024; // 10MB pages seems large :thinking:
         iba_initStackAllocator((iba_StackAllocatorDesc)
@@ -282,13 +281,13 @@ ibr_RenderGraphPool ibr_allocRenderGraphPool(ib_Core* core)
                                 },
                                 .PageSize = transientGpuPageSize
                             },
-                            &pool.Graphs[i].FrameGPUStack);
+                            &graphs[i].FrameGPUStack);
 
         ib_initTimerManager((ib_TimerManagerDesc)
                             {
                                 .Core = core,
                                 .MaxTimerCount = 1024,
-                            }, &pool.Graphs[i].TimerManager);
+                            }, &graphs[i].TimerManager);
 
         // Create the descriptor pools
         {
@@ -330,153 +329,147 @@ ibr_RenderGraphPool ibr_allocRenderGraphPool(ib_Core* core)
         ib_vkCheck(vkCreateSemaphore(core->LogicalDevice, &(VkSemaphoreCreateInfo)
                                      {
                                          .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
-                                     }, ib_NoVkAllocator, &pool.Graphs[i].FrameSemaphore));
+                                     }, ib_NoVkAllocator, &graphs[i].FrameSemaphore));
 
         ib_vkCheck(vkCreateFence(core->LogicalDevice, &(VkFenceCreateInfo)
                                  {
                                      .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
                                      .flags = VK_FENCE_CREATE_SIGNALED_BIT
-                                 }, ib_NoVkAllocator, &pool.Graphs[i].FrameFence));
+                                 }, ib_NoVkAllocator, &graphs[i].FrameFence));
     }
-    return pool;
 }
 
-void ibr_freeRenderGraphPool(ib_Core* core, ibr_RenderGraphPool* pool)
+void ibr_freeRenderGraphs(ib_Core* core, ibr_RenderGraph* graphs, uint32_t graphCount)
 {
-	ib_potentiallyUnused(core);
+    for (uint32_t i = 0; i < graphCount; i++)
+    {
+        ibr_RenderGraph* graph = &graphs[i];
 
-	for (uint32_t i = 0; i < ib_FramebufferCount; i++)
-	{
-		ibr_RenderGraph* graph = &pool->Graphs[i];
+        for (ibr_TransientTexture* iter = graph->TransientTextures; iter != NULL; iter = iter->Next)
+        {
+            ib_freeTexture(graph->Core, &iter->Texture);
+        }
+        graph->TransientTextures = NULL;
 
-		for (ibr_TransientTexture* iter = graph->TransientTextures; iter != NULL; iter = iter->Next)
-		{
-			ib_freeTexture(graph->Core, &iter->Texture);
-		}
-		graph->TransientTextures = NULL;
+        for (ibr_TransientBuffer* iter = graph->TransientBuffers; iter != NULL; iter = iter->Next)
+        {
+            ib_freeBuffer(graph->Core, &iter->Buffer);
+        }
+        graph->TransientBuffers = NULL;
 
-		for (ibr_TransientBuffer* iter = graph->TransientBuffers; iter != NULL; iter = iter->Next)
-		{
-			ib_freeBuffer(graph->Core, &iter->Buffer);
-		}
-		graph->TransientBuffers = NULL;
+        for (ibr_TransientImageView* iter = graph->TransientImageViews; iter != NULL; iter = iter->Next)
+        {
+            vkDestroyImageView(graph->Core->LogicalDevice, iter->View, ib_NoVkAllocator);
+        }
+        graph->TransientImageViews = NULL;
 
-		for (ibr_TransientImageView* iter = graph->TransientImageViews; iter != NULL; iter = iter->Next)
-		{
-			vkDestroyImageView(graph->Core->LogicalDevice, iter->View, ib_NoVkAllocator);
-		}
-		graph->TransientImageViews = NULL;
+        vkDestroyDescriptorPool(core->LogicalDevice, graph->TransientDescriptorPool, ib_NoVkAllocator);
 
-		vkDestroyDescriptorPool(core->LogicalDevice, graph->TransientDescriptorPool, ib_NoVkAllocator);
+        for (uint32_t q = 0; q < ib_Queue_Count; q++)
+        {
+            vkDestroyCommandPool(core->LogicalDevice, graph->TransientCommandPools[q], ib_NoVkAllocator);
+        }
 
-		for (uint32_t q = 0; q < ib_Queue_Count; q++)
-		{
-			vkDestroyCommandPool(core->LogicalDevice, graph->TransientCommandPools[q], ib_NoVkAllocator);
-		}
+        vkDestroyFence(core->LogicalDevice, graph->FrameFence, ib_NoVkAllocator);
+        vkDestroySemaphore(core->LogicalDevice, graph->FrameSemaphore, ib_NoVkAllocator);
 
-		vkDestroyFence(core->LogicalDevice, graph->FrameFence, ib_NoVkAllocator);
-		vkDestroySemaphore(core->LogicalDevice, graph->FrameSemaphore, ib_NoVkAllocator);
-
-		ib_killTimerManager(core, &graph->TimerManager);
+        ib_killTimerManager(core, &graph->TimerManager);
         iba_killStackAllocator(&graph->FrameGPUStack);
-		iba_killStackAllocator(&graph->FrameCPUStack);
-	}
+        iba_killStackAllocator(&graph->FrameCPUStack);
+    }
 }
 
-ibr_RenderGraph* ibr_beginFrame(ibr_RenderGraphPool* pool, ibr_BeginFrameDesc desc)
+bool ibr_beginFrame(ibr_RenderGraph* graph, ibr_BeginFrameDesc desc)
 {
-	ibr_RenderGraph* graph = &pool->Graphs[desc.FrameIndex];
+    // Fence is signaled - our resources are free, we're good to go!
+    ib_vkCheck(vkWaitForFences(graph->Core->LogicalDevice, 1, &graph->FrameFence, VK_TRUE, UINT64_MAX));
 
-	// Fence is signaled - our resources are free, we're good to go!
-	ib_vkCheck(vkWaitForFences(graph->Core->LogicalDevice, 1, &graph->FrameFence, VK_TRUE, UINT64_MAX));
+    for (ibr_TransientTexture* head = graph->TransientTextures; head != NULL; head = head->Next)
+    {
+        ib_freeTexture(graph->Core, &head->Texture);
+    }
+    graph->TransientTextures = NULL;
 
-	for (ibr_TransientTexture* head = graph->TransientTextures; head != NULL; head = head->Next)
-	{
-		ib_freeTexture(graph->Core, &head->Texture);
-	}
-	graph->TransientTextures = NULL;
+    for (ibr_TransientBuffer* head = graph->TransientBuffers; head != NULL; head = head->Next)
+    {
+        ib_freeBuffer(graph->Core, &head->Buffer);
+    }
+    graph->TransientBuffers = NULL;
 
-	for (ibr_TransientBuffer* head = graph->TransientBuffers; head != NULL; head = head->Next)
-	{
-		ib_freeBuffer(graph->Core, &head->Buffer);
-	}
-	graph->TransientBuffers = NULL;
+    for (ibr_TransientImageView* iter = graph->TransientImageViews; iter != NULL; iter = iter->Next)
+    {
+        vkDestroyImageView(graph->Core->LogicalDevice, iter->View, ib_NoVkAllocator);
+    }
+    graph->TransientImageViews = NULL;
 
-	for (ibr_TransientImageView* iter = graph->TransientImageViews; iter != NULL; iter = iter->Next)
-	{
-		vkDestroyImageView(graph->Core->LogicalDevice, iter->View, ib_NoVkAllocator);
-	}
-	graph->TransientImageViews = NULL;
+    vkResetDescriptorPool(graph->Core->LogicalDevice, graph->TransientDescriptorPool, 0);
+    for (uint32_t q = 0; q < ib_Queue_Count; q++)
+    {
+        vkResetCommandPool(graph->Core->LogicalDevice, graph->TransientCommandPools[q], 0);
+        // TODO: Revisit later. We should simply track the previous list of active command buffers and grow that list as we go.
+        // For now, just free our previous command buffers every frame.
+        for (ibr_TransientCommandBuffer* iter = graph->TransientCommandBuffers[q]; iter != NULL; iter = iter->Next)
+        {
+            vkFreeCommandBuffers(graph->Core->LogicalDevice, graph->TransientCommandPools[q], 1, &iter->CommandBuffer);
+        }
+        list_clear(&graph->TransientCommandBuffers[q]);
+    }
 
-	vkResetDescriptorPool(graph->Core->LogicalDevice, graph->TransientDescriptorPool, 0);
-	for (uint32_t q = 0; q < ib_Queue_Count; q++)
-	{
-		vkResetCommandPool(graph->Core->LogicalDevice, graph->TransientCommandPools[q], 0);
-		// TODO: Revisit later. We should simply track the previous list of active command buffers and grow that list as we go.
-		// For now, just free our previous command buffers every frame.
-		for (ibr_TransientCommandBuffer* iter = graph->TransientCommandBuffers[q]; iter != NULL; iter = iter->Next)
-		{
-			vkFreeCommandBuffers(graph->Core->LogicalDevice, graph->TransientCommandPools[q], 1, &iter->CommandBuffer);
-		}
-		list_clear(&graph->TransientCommandBuffers[q]);
-	}
+    if (desc.Surface != NULL)
+    {
+        ib_PrepareSurfaceResult prepareResult = ib_prepareSurface(graph->Core, (ib_PrepareSurfaceDesc) {
+            desc.Surface, desc.FrameIndex
+        });
 
-	if (desc.Surface != NULL)
-	{
-		ib_PrepareSurfaceResult prepareResult = ib_prepareSurface(graph->Core, (ib_PrepareSurfaceDesc) {
-			desc.Surface, desc.FrameIndex
-		});
+        // Couldn't prepare our surface.
+        if (prepareResult.SurfaceState != ib_SurfaceState_Ok)
+        {
+            return false;
+        }
 
-		// Couldn't prepare our surface.
-		if (prepareResult.SurfaceState != ib_SurfaceState_Ok)
-		{
-			return NULL;
-		}
+        graph->SwapchainTextureIndex = prepareResult.SwapchainTextureIndex;
+        graph->SwapchainTexture = &desc.Surface->SwapchainTextures[graph->SwapchainTextureIndex];
+        graph->SwapchainAcquireSemaphore = desc.Surface->Framebuffers[desc.FrameIndex].AcquireSemaphore;
+        graph->ScreenExtent = (VkExtent2D) { graph->SwapchainTexture->Extent.width, graph->SwapchainTexture->Extent.height };
+    }
+    else
+    {
+        graph->ScreenExtent = (VkExtent2D) { 1, 1 };
+        graph->SwapchainTexture = NULL;
+        graph->SwapchainAcquireSemaphore = VK_NULL_HANDLE;
+    }
 
-		graph->SwapchainTextureIndex = prepareResult.SwapchainTextureIndex;
-		graph->SwapchainTexture = &desc.Surface->SwapchainTextures[graph->SwapchainTextureIndex];
-		graph->SwapchainAcquireSemaphore = desc.Surface->Framebuffers[desc.FrameIndex].AcquireSemaphore;
-		graph->ScreenExtent = (VkExtent2D) { graph->SwapchainTexture->Extent.width, graph->SwapchainTexture->Extent.height };
-	}
-	else
-	{
-		graph->ScreenExtent = (VkExtent2D) { 1, 1 };
-		graph->SwapchainTexture = NULL;
-		graph->SwapchainAcquireSemaphore = VK_NULL_HANDLE;
-	}
+    // Only reset our fence if we know we're going to signal it.
+    // If we made it this far, we're good to go.
+    ib_vkCheck(vkResetFences(graph->Core->LogicalDevice, 1, &graph->FrameFence));
 
-	// Only reset our fence if we know we're going to signal it.
-	// If we made it this far, we're good to go.
-	ib_vkCheck(vkResetFences(graph->Core->LogicalDevice, 1, &graph->FrameFence));
+    iba_stackReset(&graph->FrameCPUStack);
 
-	iba_stackReset(&graph->FrameCPUStack);
+    // Convert our timers to timings from the previous frame
+    {
+        list_clear(&graph->PreviousFrameTimings);
+        for (ibr_TransientProfileScope* iter = graph->CompletedScopes; iter != NULL; iter = iter->Next)
+        {
+            bool isBlocking = false;
+            ibr_ProfilingScope* scope = &iter->Scope;
+            ibr_TransientScopeTiming* transientTiming;
+            list_pushAlloc(transientTiming, ibr_TransientScopeTiming, &graph->PreviousFrameTimings);
+            transientTiming->Timing = (ibr_ScopeTiming)
+            {
+                .Timing = ib_queryTimer(graph->Core, &graph->TimerManager, &scope->Timer, isBlocking),
+                .Name = scope->Name,
+            };
+            ib_assert(transientTiming->Timing.Timing != ib_TimerQueryNotReady); // We should be ready, our frame's fence was signaled.
+        }
+        list_clear(&graph->CompletedScopes);
+    }
+    ib_resetTimersCPU(graph->Core, &graph->TimerManager);
 
-	// Convert our timers to timings from the previous frame
-	{
-		list_clear(&graph->PreviousFrameTimings);
-		for (ibr_TransientProfileScope* iter = graph->CompletedScopes; iter != NULL; iter = iter->Next)
-		{
-			bool isBlocking = false;
-			ibr_ProfilingScope* scope = &iter->Scope;
-			ibr_TransientScopeTiming* transientTiming;
-			list_pushAlloc(transientTiming, ibr_TransientScopeTiming, &graph->PreviousFrameTimings);
-			transientTiming->Timing = (ibr_ScopeTiming)
-			{
-				.Timing = ib_queryTimer(graph->Core, &graph->TimerManager, &scope->Timer, isBlocking),
-				.Name = scope->Name,
-			};
-			ib_assert(transientTiming->Timing.Timing != ib_TimerQueryNotReady); // We should be ready, our frame's fence was signaled.
-		}
-		list_clear(&graph->CompletedScopes);
-	}
-	ib_resetTimersCPU(graph->Core, &graph->TimerManager);
-
-	return graph;
+    return true;
 }
 
-void ibr_endFrame(ibr_RenderGraphPool* pool, ibr_RenderGraph* graph)
+void ibr_endFrame(ibr_RenderGraph* graph)
 {
-	ib_potentiallyUnused(pool);
 	ib_potentiallyUnused(graph);
 	ib_assert(graph->ActiveProfilingScopes == NULL);
 }

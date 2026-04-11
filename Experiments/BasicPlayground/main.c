@@ -11,7 +11,7 @@
 #include <stdio.h>
 
 static ib_Core Core;
-static ibr_RenderGraphPool GraphPool;
+static ibr_RenderGraph Graphs[ib_FramebufferCount];
 static ib_Surface Surface;
 
 static void* transientAlloc(iba_StackAllocator* allocator, size_t size, size_t alignment)
@@ -209,7 +209,7 @@ static void init(void)
                 },
                 &Core);
 
-    GraphPool = ibr_allocRenderGraphPool(&Core);
+    ibr_initRenderGraphs(&Core, Graphs, ib_arrayCount(Graphs));
     Surface = ib_allocWin32Surface(&Core, (ib_SurfaceDesc)
                                    {
                                        .Win32WindowHandle = sapp_win32_get_hwnd(),
@@ -273,19 +273,20 @@ static void kill(void)
     iba_killTlsfAllocator(&GlobalBufferMemoryAllocator);
     ib_freeBuffer(&Core, &GlobalBufferMemory);
     ib_freeSurface(&Core, &Surface);
-    ibr_freeRenderGraphPool(&Core, &GraphPool);
+    ibr_killRenderGraphs(&Core, Graphs, ib_arrayCount(Graphs));
     ib_killCore(&Core);
 }
 
 static void update(void)
 {
     static uint32_t ActiveFrame = 0;
-    ibr_RenderGraph* graph = ibr_beginFrame(&GraphPool, (ibr_BeginFrameDesc)
+    ibr_RenderGraph* graph = &Graphs[ActiveFrame]; 
+    bool frameBegun = ibr_beginFrame(graph, (ibr_BeginFrameDesc)
                    {
                        .FrameIndex = ActiveFrame,
                        .Surface = &Surface
                    });
-    if (graph != NULL)
+    if (frameBegun)
     {
         VkCommandBuffer commands = ibr_allocTransientCommandBuffer(graph, ib_Queue_Graphics);
         ib_beginCommandBuffer(&Core, commands);
@@ -428,7 +429,7 @@ static void update(void)
                                  });
 
         ibr_present((ibr_PresentDesc) { &Surface, graph });
-        ibr_endFrame(&GraphPool, graph);
+        ibr_endFrame(graph);
     }
 
     ActiveFrame = (ActiveFrame + 1) % ib_FramebufferCount;
