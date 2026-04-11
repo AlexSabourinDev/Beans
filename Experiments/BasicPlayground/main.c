@@ -362,7 +362,8 @@ static void update(void)
                               {
                                   .ResourceStates =
                                   {
-                                      ibr_textureState(&renderOutput, ibr_TextureState_ReadWrite, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
+                                      ibr_textureState(&renderOutput, ibr_TextureState_ReadWrite, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+                                      ibr_bufferState(&rasterizerParams, ibr_BufferState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
                                   },
                                   .PassName = "Rasterizer"
                               });
