@@ -297,7 +297,6 @@ void ibr_beginUpload(VkCommandBuffer commands, ibr_UploadQueue* queue)
         .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
     };
 
-    // No need for an image barrier. We create the texture with the right initial layout.
     vkCmdPipelineBarrier2(commands, &(VkDependencyInfo)
                         {
                             .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
@@ -618,15 +617,9 @@ void ibr_writeResources(ibr_RenderGraph* graph, VkCommandBuffer commands, ibr_Wr
     uint32_t resourceTransitionCount = 0;
     for (ibr_WriteResourceDesc* iter = begin; iter != end && iter->Resource != NULL; iter++)
     {
-
         if (iter->Resource->Type == ibr_ResourceType_Texture)
         {
-            // If we're copying to a texture that's not in a transfer dst layout
-            // Make sure to transition it.
-            if (iter->Resource->TextureLayout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
-            {
-                resourceTransitions[resourceTransitionCount++] = ibr_textureState(iter->Resource, ibr_TextureState_TransferDst, VK_PIPELINE_STAGE_2_COPY_BIT);
-            }
+            resourceTransitions[resourceTransitionCount++] = ibr_textureState(iter->Resource, ibr_TextureState_TransferDst, VK_PIPELINE_STAGE_2_COPY_BIT);
         }
         else if (iter->Resource->Type == ibr_ResourceType_Buffer)
         {
