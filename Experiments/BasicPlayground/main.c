@@ -12,7 +12,6 @@
 
 static ib_Core Core;
 static ibr_RenderGraph Graphs[ib_FramebufferCount];
-static ibr_UploadQueue UploadQueues[ib_FramebufferCount];
 static ib_Surface Surface;
 
 static void* transientAlloc(iba_StackAllocator* allocator, size_t size, size_t alignment)
@@ -210,7 +209,6 @@ static void init(void)
                 },
                 &Core);
 
-    ibr_initUploadQueues(&Core, UploadQueues, ib_arrayCount(UploadQueues));
     ibr_initRenderGraphs(&Core, Graphs, ib_arrayCount(Graphs));
     Surface = ib_allocWin32Surface(&Core, (ib_SurfaceDesc)
                                    {
@@ -276,7 +274,6 @@ static void kill(void)
     ib_freeBuffer(&Core, &GlobalBufferMemory);
     ib_freeSurface(&Core, &Surface);
     ibr_killRenderGraphs(&Core, Graphs, ib_arrayCount(Graphs));
-    ibr_killUploadQueues(&Core, UploadQueues, ib_arrayCount(UploadQueues));
     ib_killCore(&Core);
 }
 
@@ -287,15 +284,13 @@ static void update(void)
     bool frameBegun = ibr_beginFrame(graph, (ibr_BeginFrameDesc)
                    {
                        .FrameIndex = ActiveFrame,
-                       .Surface = &Surface,
-                       .UploadQueue = &UploadQueues[ActiveFrame]
+                       .Surface = &Surface
                    });
     if (frameBegun)
     {
         VkCommandBuffer commands = ibr_allocTransientCommandBuffer(graph, ib_Queue_Graphics);
         ib_beginCommandBuffer(&Core, commands);
-
-        ibr_beginUpload(commands, graph->UploadQueue);
+        ibr_beginUpload(graph, commands);
 
         ibr_Resource swapchainResource;
         ibr_Resource rasterizerParams;
@@ -324,7 +319,7 @@ static void update(void)
                                                {
                                                    .Usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                                    .Size = sizeof(RasterizerParams),
-                                                   .RequiredMemoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                                   .RequiredMemoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                    .DebugName = "RasterizerParams",
                                                }
                                            }
@@ -437,7 +432,7 @@ static void update(void)
                                  });
 
         ibr_present((ibr_PresentDesc) { &Surface, graph });
-        ibr_endUpload(graph->UploadQueue);
+        ibr_endUpload(graph);
         ibr_endFrame(graph);
     }
 

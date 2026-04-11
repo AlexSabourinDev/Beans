@@ -14,17 +14,6 @@
 
 typedef struct
 {
-    // Host local, device visible transient memory.
-    iba_StackAllocator GPUStack;
-} ibr_UploadQueue;
-
-void ibr_initUploadQueues(ib_Core* core, ibr_UploadQueue* queues, uint32_t count);
-void ibr_killUploadQueues(ib_Core* core, ibr_UploadQueue* queues, uint32_t count);
-void ibr_beginUpload(VkCommandBuffer commandBuffer, ibr_UploadQueue* queues);
-void ibr_endUpload(ibr_UploadQueue* queue);
-
-typedef struct
-{
     ib_Timer Timer;
     char const* Name;
 } ibr_ProfilingScope;
@@ -74,7 +63,7 @@ typedef struct ibr_TransientScopeTiming
 typedef struct ibr_RenderGraph
 {
     ib_Core* Core;
-    ibr_UploadQueue* UploadQueue;
+    iba_StackAllocator FrameGPUStack;
     iba_StackAllocator FrameCPUStack;
 
     ibr_TransientTexture* TransientTextures;
@@ -106,10 +95,12 @@ typedef struct
 {
     uint32_t FrameIndex;
     ib_Surface* Surface;
-    ibr_UploadQueue* UploadQueue;
 } ibr_BeginFrameDesc;
 
 bool ibr_beginFrame(ibr_RenderGraph* graph, ibr_BeginFrameDesc desc);
+// I don't love this API - needing to remember to call beginFrame and THEN begin upload once you have a command buffer isn't ideal.
+void ibr_beginUpload(ibr_RenderGraph* graph, VkCommandBuffer commandBuffer);
+void ibr_endUpload(ibr_RenderGraph* graph);
 void ibr_endFrame(ibr_RenderGraph* graph);
 
 void* ibr_allocTransientMemory(ibr_RenderGraph* graph, size_t size, size_t alignment);

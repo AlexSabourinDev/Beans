@@ -122,7 +122,6 @@ static bool readWholeFile(char const* path, char** output, size_t* outputSize)
 
 static ib_Core Core;
 static ibr_RenderGraph Graphs[ib_FramebufferCount];
-static ibr_UploadQueue UploadQueues[ib_FramebufferCount];
 static ib_Surface Surface;
 
 static char* DisassemblyStats = NULL;
@@ -169,7 +168,6 @@ static void init(void)
                 },
                 &Core);
 
-    ibr_initUploadQueues(&Core, UploadQueues, ib_arrayCount(UploadQueues));
     ibr_initRenderGraphs(&Core, Graphs, ib_arrayCount(Graphs));
     Surface = ib_allocWin32Surface(&Core, (ib_SurfaceDesc)
                                    {
@@ -196,7 +194,6 @@ static void kill(void)
     imgui_kill();
     ib_freeSurface(&Core, &Surface);
     ibr_killRenderGraphs(&Core, Graphs, ib_arrayCount(Graphs));
-    ibr_killUploadQueues(&Core, UploadQueues, ib_arrayCount(UploadQueues));
     ib_killCore(&Core);
 }
 
@@ -332,14 +329,13 @@ static void update(void)
     bool frameBegun = ibr_beginFrame(graph, (ibr_BeginFrameDesc)
                                             {
                                                 .FrameIndex = ActiveFrame,
-                                                .Surface = &Surface,
-                                                .UploadQueue = &UploadQueues[ActiveFrame]
+                                                .Surface = &Surface
                                             });
     if (frameBegun)
     {
         VkCommandBuffer commands = ibr_allocTransientCommandBuffer(graph, ib_Queue_Graphics);
         ib_beginCommandBuffer(&Core, commands);
-        ibr_beginUpload(commands, graph->UploadQueue);
+        ibr_beginUpload(graph, commands);
 
         ibr_Resource swapchainResource;
         ibr_allocPassResources(graph, commands, (ibr_AllocPassResourcesDesc)
@@ -386,7 +382,7 @@ static void update(void)
                                  });
 
         ibr_present((ibr_PresentDesc) { &Surface, graph });
-        ibr_endUpload(graph->UploadQueue);
+        ibr_endUpload(graph);
         ibr_endFrame(graph);
     }
 

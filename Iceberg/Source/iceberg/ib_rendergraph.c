@@ -258,58 +258,6 @@ static void freeGpuMemoryPage(void* userData, iba_PageHeader* pageHeader)
     free(page);
 }
 
-void ibr_initUploadQueues(ib_Core* core, ibr_UploadQueue* queues, uint32_t count)
-{
-    for (uint32_t i = 0; i < count; i++)
-    {
-        uint32_t const transientGpuPageSize = 1024 * 1024; // 10MB pages seems large :thinking:
-        iba_initStackAllocator((iba_StackAllocatorDesc)
-                               {
-                                   .PageAllocator =
-                                   {
-                                       .AllocPage = &allocGpuMemoryPage,
-                                       .FreePage = &freeGpuMemoryPage,
-                                       .UserData = &core->Allocator
-                                   },
-                                   .PageSize = transientGpuPageSize
-                               },
-                               &queues[i].GPUStack);
-    }
-}
-void ibr_killUploadQueues(ib_Core* core, ibr_UploadQueue* queues, uint32_t count)
-{
-    for (uint32_t i = 0; i < count; i++)
-    {
-        iba_killStackAllocator(&queues[i].GPUStack);
-    }
-}
-
-void ibr_beginUpload(VkCommandBuffer commands, ibr_UploadQueue* queue)
-{
-    ib_unused(queue); // Don't actually need to know which memory. We're using a global memory barrier.
-    // Make sure our memory write to host memory is visible with a memory barrier.
-    VkMemoryBarrier2 memoryBarrier =
-    {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-        .srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
-        .dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT,
-        .srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
-    };
-
-    vkCmdPipelineBarrier2(commands, &(VkDependencyInfo)
-                        {
-                            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                            .memoryBarrierCount = 1,
-                            .pMemoryBarriers = &memoryBarrier
-                        });
-}
-
-void ibr_endUpload(ibr_UploadQueue* queue)
-{
-    iba_stackReset(&queue->GPUStack);
-}
-
 void ibr_initRenderGraphs(ib_Core* core, ibr_RenderGraph* graphs, uint32_t graphCount)
 {
     for (uint32_t i = 0; i < graphCount; i++)
@@ -375,6 +323,19 @@ void ibr_initRenderGraphs(ib_Core* core, ibr_RenderGraph* graphs, uint32_t graph
                                      .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
                                      .flags = VK_FENCE_CREATE_SIGNALED_BIT
                                  }, ib_NoVkAllocator, &graphs[i].FrameFence));
+
+        uint32_t const transientGpuPageSize = 1024 * 1024; // 10MB pages seems large :thinking:
+        iba_initStackAllocator((iba_StackAllocatorDesc)
+                               {
+                                   .PageAllocator =
+                                   {
+                                       .AllocPage = &allocGpuMemoryPage,
+                                       .FreePage = &freeGpuMemoryPage,
+                                       .UserData = &core->Allocator
+                                   },
+                                   .PageSize = transientGpuPageSize
+                               },
+                               &graphs[i].FrameGPUStack);
     }
 }
 
@@ -414,14 +375,12 @@ void ibr_killRenderGraphs(ib_Core* core, ibr_RenderGraph* graphs, uint32_t graph
 
         ib_killTimerManager(core, &graph->TimerManager);
         iba_killStackAllocator(&graph->FrameCPUStack);
+        iba_killStackAllocator(&graph->FrameGPUStack);
     }
 }
 
 bool ibr_beginFrame(ibr_RenderGraph* graph, ibr_BeginFrameDesc desc)
 {
-    ib_assert(desc.UploadQueue != NULL);
-    graph->UploadQueue = desc.UploadQueue;
-
     // Fence is signaled - our resources are free, we're good to go!
     ib_vkCheck(vkWaitForFences(graph->Core->LogicalDevice, 1, &graph->FrameFence, VK_TRUE, UINT64_MAX));
 
@@ -485,6 +444,8 @@ bool ibr_beginFrame(ibr_RenderGraph* graph, ibr_BeginFrameDesc desc)
     ib_vkCheck(vkResetFences(graph->Core->LogicalDevice, 1, &graph->FrameFence));
 
     iba_stackReset(&graph->FrameCPUStack);
+    // Our GPU memory is no longer in use by the previous frame. Reset for the current frame.
+    iba_stackReset(&graph->FrameGPUStack);
 
     // Convert our timers to timings from the previous frame
     {
@@ -515,6 +476,33 @@ void ibr_endFrame(ibr_RenderGraph* graph)
     ib_assert(graph->ActiveProfilingScopes == NULL);
 }
 
+void ibr_beginUpload(ibr_RenderGraph* graph, VkCommandBuffer commands)
+{
+    ib_unused(graph); // Don't actually need to know which memory. We're using a global memory barrier.
+    // Make sure our memory write to host memory is visible with a memory barrier.
+    VkMemoryBarrier2 memoryBarrier =
+    {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT,
+        .srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
+    };
+
+    vkCmdPipelineBarrier2(commands, &(VkDependencyInfo)
+                        {
+                            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                            .memoryBarrierCount = 1,
+                            .pMemoryBarriers = &memoryBarrier
+                        });
+}
+
+void ibr_endUpload(ibr_RenderGraph* graph)
+{
+    // Doesn't do anything, here for symmetry.
+    ib_unused(graph);
+}
+
 void* ibr_allocTransientMemory(ibr_RenderGraph* graph, size_t size, size_t alignment)
 {
     iba_StackAllocation allocation = iba_stackAlloc(&graph->FrameCPUStack, (iba_StackAllocationRequest) { size, alignment });
@@ -523,7 +511,7 @@ void* ibr_allocTransientMemory(ibr_RenderGraph* graph, size_t size, size_t align
 
 ibr_TransientGpuMemory ibr_allocTransientGpuMemory(ibr_RenderGraph* graph, size_t size, size_t alignment)
 {
-    iba_StackAllocation allocation = iba_stackAlloc(&graph->UploadQueue->GPUStack, (iba_StackAllocationRequest) { size, alignment });
+    iba_StackAllocation allocation = iba_stackAlloc(&graph->FrameGPUStack, (iba_StackAllocationRequest) { size, alignment });
     StackGpuMemoryPage* gpuPage = (StackGpuMemoryPage*)allocation.Page;
     return (ibr_TransientGpuMemory)
     {
