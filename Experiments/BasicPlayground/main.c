@@ -12,6 +12,7 @@
 
 static ib_Core Core;
 static ibr_RenderGraph Graphs[ib_FramebufferCount];
+static ibr_UploadQueue UploadQueues[ib_FramebufferCount];
 static ib_Surface Surface;
 
 static void* transientAlloc(iba_StackAllocator* allocator, size_t size, size_t alignment)
@@ -209,6 +210,7 @@ static void init(void)
                 },
                 &Core);
 
+    ibr_initUploadQueues(&Core, UploadQueues, ib_arrayCount(UploadQueues));
     ibr_initRenderGraphs(&Core, Graphs, ib_arrayCount(Graphs));
     Surface = ib_allocWin32Surface(&Core, (ib_SurfaceDesc)
                                    {
@@ -274,6 +276,7 @@ static void kill(void)
     ib_freeBuffer(&Core, &GlobalBufferMemory);
     ib_freeSurface(&Core, &Surface);
     ibr_killRenderGraphs(&Core, Graphs, ib_arrayCount(Graphs));
+    ibr_killUploadQueues(&Core, UploadQueues, ib_arrayCount(UploadQueues));
     ib_killCore(&Core);
 }
 
@@ -284,17 +287,20 @@ static void update(void)
     bool frameBegun = ibr_beginFrame(graph, (ibr_BeginFrameDesc)
                    {
                        .FrameIndex = ActiveFrame,
-                       .Surface = &Surface
+                       .Surface = &Surface,
+                       .UploadQueue = &UploadQueues[ActiveFrame]
                    });
     if (frameBegun)
     {
         VkCommandBuffer commands = ibr_allocTransientCommandBuffer(graph, ib_Queue_Graphics);
         ib_beginCommandBuffer(&Core, commands);
 
+        ibr_beginUpload(commands, graph->UploadQueue);
+
         ibr_Resource swapchainResource;
         ibr_Resource rasterizerParams;
         ibr_Resource renderOutput;
-        ibr_allocPassResources(commands, graph, (ibr_AllocPassResourcesDesc)
+        ibr_allocPassResources(graph, commands, (ibr_AllocPassResourcesDesc)
                                {
                                    .ResourceBindings =
                                    {
@@ -316,18 +322,10 @@ static void update(void)
                                                .Flags = ibr_ResourceFlag_Transient,
                                                .BufferDesc =
                                                {
-                                                   .Usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                   .Usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                                    .Size = sizeof(RasterizerParams),
                                                    .RequiredMemoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                    .DebugName = "RasterizerParams",
-                                                   .InitialWrite =
-                                                   {
-                                                       .Data = &(RasterizerParams)
-                                                       {
-                                                           .OutputDimensions = (cu2){ graph->ScreenExtent.width, graph->ScreenExtent.height }
-                                                       },
-                                                       .Size = sizeof(RasterizerParams)
-                                                   }
                                                }
                                            }
                                        },
@@ -350,6 +348,15 @@ static void update(void)
                                        },
                                    }
                                });
+
+        ibr_writeResource(graph, commands, &rasterizerParams, (ib_WriteData)
+                          {
+                              .Data = &(RasterizerParams)
+                              {
+                                  .OutputDimensions = (cu2) { graph->ScreenExtent.width, graph->ScreenExtent.height }
+                              },
+                              .Size = sizeof(RasterizerParams)
+                          });
 
         ibr_beginComputePass(graph, commands, (ibr_BeginComputePassDesc)
                               {
@@ -429,6 +436,7 @@ static void update(void)
                                  });
 
         ibr_present((ibr_PresentDesc) { &Surface, graph });
+        ibr_endUpload(graph->UploadQueue);
         ibr_endFrame(graph);
     }
 

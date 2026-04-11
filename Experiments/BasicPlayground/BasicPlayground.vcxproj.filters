@@ -185,6 +185,6 @@
     <FxCompile Include="..\..\Iceberg\Shaders\vulkan.hsh">
       <Filter>Iceberg\Shaders</Filter>
     </FxCompile>
-    <FxCompile Include="rasterizer.hlsl" />
+    <FxCompile Include="..\Assets\Shaders\rasterizer.hlsl" />
   </ItemGroup>
 </Project>

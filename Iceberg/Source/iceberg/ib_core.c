@@ -232,8 +232,8 @@ static iba_PageHeader* allocStagingMemoryPage(void* userData, size_t pageSize)
 
     page->PageAlloc = iba_gpuAlloc(generalAllocator, (iba_GpuAllocationRequest)
                                    {
-                                       .Size = pageSize,
-                                       .Alignment = 0,
+                                       .Size = memoryRequirements.size,
+                                       .Alignment = memoryRequirements.alignment,
                                        .TypeBits = memoryRequirements.memoryTypeBits,
                                        .RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                    });
@@ -2507,7 +2507,7 @@ static iba_PageHeader* allocRaytracingStagingMemoryPage(void* userData, size_t p
 
     page->PageAlloc = iba_gpuAlloc(&raytracing->Core->Allocator, (iba_GpuAllocationRequest)
                                    {
-                                       .Size = pageSize,
+                                       .Size = memoryRequirements.size,
                                        .Alignment = raytracing->AccelerationStructureScratchBufferAlignment,
                                        .TypeBits = memoryRequirements.memoryTypeBits,
                                        .RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,

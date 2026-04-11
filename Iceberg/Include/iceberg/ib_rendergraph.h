@@ -14,6 +14,17 @@
 
 typedef struct
 {
+    // Host local, device visible transient memory.
+    iba_StackAllocator GPUStack;
+} ibr_UploadQueue;
+
+void ibr_initUploadQueues(ib_Core* core, ibr_UploadQueue* queues, uint32_t count);
+void ibr_killUploadQueues(ib_Core* core, ibr_UploadQueue* queues, uint32_t count);
+void ibr_beginUpload(VkCommandBuffer commandBuffer, ibr_UploadQueue* queues);
+void ibr_endUpload(ibr_UploadQueue* queue);
+
+typedef struct
+{
     ib_Timer Timer;
     char const* Name;
 } ibr_ProfilingScope;
@@ -63,9 +74,8 @@ typedef struct ibr_TransientScopeTiming
 typedef struct ibr_RenderGraph
 {
     ib_Core* Core;
+    ibr_UploadQueue* UploadQueue;
     iba_StackAllocator FrameCPUStack;
-    // Host local, device visible transient memory.
-    iba_StackAllocator FrameGPUStack;
 
     ibr_TransientTexture* TransientTextures;
     ibr_TransientBuffer* TransientBuffers;
@@ -96,9 +106,10 @@ typedef struct
 {
     uint32_t FrameIndex;
     ib_Surface* Surface;
+    ibr_UploadQueue* UploadQueue;
 } ibr_BeginFrameDesc;
 
-void ibr_beginFrame(ibr_RenderGraph* graph, ibr_BeginFrameDesc desc);
+bool ibr_beginFrame(ibr_RenderGraph* graph, ibr_BeginFrameDesc desc);
 void ibr_endFrame(ibr_RenderGraph* graph);
 
 void* ibr_allocTransientMemory(ibr_RenderGraph* graph, size_t size, size_t alignment);
@@ -177,11 +188,35 @@ typedef struct
     uint32_t LayerIndex;
 } ibr_AllocTransientImageViewDesc;
 
-ibr_Resource ibr_allocPassResource(VkCommandBuffer commands, ibr_RenderGraph* graph, ibr_ResourceDesc resourceDesc);
-void ibr_allocPassResources(VkCommandBuffer commands, ibr_RenderGraph* graph, ibr_AllocPassResourcesDesc desc);
+ibr_Resource ibr_allocPassResource(ibr_RenderGraph* graph, VkCommandBuffer commands, ibr_ResourceDesc resourceDesc);
+void ibr_allocPassResources(ibr_RenderGraph* graph, VkCommandBuffer commands, ibr_AllocPassResourcesDesc desc);
 VkImageView ibr_allocTransientImageView(ibr_RenderGraph* graph, ibr_AllocTransientImageViewDesc desc);
 ib_ShaderInput ibr_allocTransientShaderInput(ibr_RenderGraph* graph, ib_AllocShaderInputDesc desc);
 VkCommandBuffer ibr_allocTransientCommandBuffer(ibr_RenderGraph* graph, ib_Queue queue);
+
+typedef struct
+{
+    ibr_Resource* Resource;
+    ib_WriteData WriteData;
+} ibr_WriteResourceDesc;
+
+typedef struct
+{
+    ib_srange(ibr_WriteResourceDesc, 8) Writes;
+} ibr_WriteResourcesDesc;
+void ibr_writeResources(ibr_RenderGraph* graph, VkCommandBuffer commands, ibr_WriteResourcesDesc desc);
+
+static void ibr_writeResource(ibr_RenderGraph* graph, VkCommandBuffer commands, ibr_Resource* resource, ib_WriteData writeData)
+{
+    ibr_writeResources(graph, commands, (ibr_WriteResourcesDesc)
+                       {
+                           (ibr_WriteResourceDesc)
+                           {
+                               resource,
+                               writeData
+                           }
+                       });
+}
 
 typedef struct
 {
@@ -215,9 +250,9 @@ typedef struct
     VkAccessFlags AcquireAccessMask;
     VkAccessFlags ReleaseAccessMask;
 
-    VkPipelineStageFlags AcquireAndReleaseStageMask; // Convenience value can be used over Acquire/Release values.
-    VkPipelineStageFlags AcquireStageMask; // When do we need our resource to be available
-    VkPipelineStageFlags ReleaseStageMask; // When are future passes free to use this resource
+    VkPipelineStageFlags2 AcquireAndReleaseStageMask; // Convenience value can be used over Acquire/Release values.
+    VkPipelineStageFlags2 AcquireStageMask; // When do we need our resource to be available
+    VkPipelineStageFlags2 ReleaseStageMask; // When are future passes free to use this resource
 } ibr_ResourceState;
 
 typedef ib_srange(ibr_ResourceState, 8) ibr_ResourceStateRange;
@@ -307,7 +342,7 @@ enum
 
 typedef uint32_t ibr_TextureState;
 
-ibr_ResourceState ibr_textureState(ibr_Resource* resource, ibr_TextureState state, VkPipelineStageFlags stage);
+ibr_ResourceState ibr_textureState(ibr_Resource* resource, ibr_TextureState state, VkPipelineStageFlags2 stage);
 ibr_ResourceState ibr_textureToPresentState(ibr_Resource* resource);
 
 enum
@@ -320,7 +355,7 @@ enum
 };
 
 typedef uint32_t ibr_BufferState;
-ibr_ResourceState ibr_bufferState(ibr_Resource* resource, ibr_BufferState state, VkPipelineStageFlags stage);
+ibr_ResourceState ibr_bufferState(ibr_Resource* resource, ibr_BufferState state, VkPipelineStageFlags2 stage);
 
 #ifdef _MSC_VER
 #pragma warning(pop)
