@@ -28,11 +28,11 @@ typedef struct
 {
     VkSemaphore Semaphore;
     uint64_t LastSignalValue;
-} ib_timelineSemaphore;
+} ib_TimelineSemaphore;
 
-ib_timelineSemaphore ib_allocTimelineSemaphore(ib_Core* core, uint64_t initialValue);
-void ib_freeTimelineSemaphore(ib_Core* core, ib_timelineSemaphore* semaphore);
-void ib_waitTimelineSemaphore(ib_Core* core, ib_timelineSemaphore* semaphore);
+ib_TimelineSemaphore ib_allocTimelineSemaphore(ib_Core* core, uint64_t initialValue);
+void ib_freeTimelineSemaphore(ib_Core* core, ib_TimelineSemaphore* semaphore);
+void ib_waitTimelineSemaphore(ib_Core* core, ib_TimelineSemaphore* semaphore);
 
 // Staging
 #define MaxTransientStagingCommandBuffers 256
@@ -631,8 +631,8 @@ typedef struct
 } ib_TLASDesc;
 
 
-ib_BLAS ib_allocBLAS(ib_Raytracing* raytracing, ib_BLASDesc desc, iba_StackAllocator* scratchMemoryStack, ib_timelineSemaphore* buildingSemaphore);
-ib_TLAS ib_allocTLAS(ib_Raytracing* raytracing, ib_TLASDesc desc, iba_StackAllocator* scratchMemoryStack, ib_timelineSemaphore* buildingSemaphore);
+ib_BLAS ib_allocBLAS(ib_Raytracing* raytracing, ib_BLASDesc desc, iba_StackAllocator* scratchMemoryStack, ib_TimelineSemaphore* buildingSemaphore);
+ib_TLAS ib_allocTLAS(ib_Raytracing* raytracing, ib_TLASDesc desc, iba_StackAllocator* scratchMemoryStack, ib_TimelineSemaphore* buildingSemaphore);
 void ib_freeBLAS(ib_Raytracing* raytracing, ib_BLAS* accelerationStructure);
 void ib_freeTLAS(ib_Raytracing* raytracing, ib_TLAS* accelerationStructure);
 

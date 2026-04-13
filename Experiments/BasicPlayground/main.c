@@ -422,12 +422,13 @@ static void update(void)
                      });
 
         ib_vkCheck(vkEndCommandBuffer(commands));
+
         ibr_submitCommandBuffers(graph, (ibr_SubmitCommandBufferDesc)
                                  {
                                      .Queue = ib_Queue_Graphics,
                                      .CommandBuffers = commands,
-                                     .WaitSemaphores = graph->SwapchainAcquireSemaphore,
-                                     .SignalSemaphores = graph->FrameSemaphore,
+                                     .WaitSemaphores = (ibr_SemaphoreSubmit){ graph->SwapchainAcquireSemaphore },
+                                     .SignalSemaphores = (ibr_SemaphoreSubmit){ graph->FrameSemaphore },
                                      .SubmitFence = graph->FrameFence
                                  });
 

@@ -211,10 +211,16 @@ static void ibr_writeResource(ibr_RenderGraph* graph, VkCommandBuffer commands, 
 
 typedef struct
 {
+    VkSemaphore Semaphore;
+    uint64_t Value;
+} ibr_SemaphoreSubmit;
+
+typedef struct
+{
     ib_Queue Queue;
-    ib_srange(VkCommandBuffer, 1) CommandBuffers;
-    ib_srange(VkSemaphore, 1) WaitSemaphores;
-    ib_srange(VkSemaphore, 1) SignalSemaphores;
+    ib_srange(VkCommandBuffer, 4) CommandBuffers;
+    ib_srange(ibr_SemaphoreSubmit, 4) WaitSemaphores;
+    ib_srange(ibr_SemaphoreSubmit, 4) SignalSemaphores;
     VkFence SubmitFence;
 } ibr_SubmitCommandBufferDesc;
 void ibr_submitCommandBuffers(ibr_RenderGraph* graph, ibr_SubmitCommandBufferDesc desc);

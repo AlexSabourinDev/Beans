@@ -168,9 +168,9 @@ void ib_loadVulkanFunctions(VkInstance instance)
     ib_vkCmdBindDescriptorSets2KHR = ib_getVulkanFunc(instance, vkCmdBindDescriptorSets2KHR);
 }
 
-ib_timelineSemaphore ib_allocTimelineSemaphore(ib_Core* core, uint64_t initialValue)
+ib_TimelineSemaphore ib_allocTimelineSemaphore(ib_Core* core, uint64_t initialValue)
 {
-    ib_timelineSemaphore semaphore = {
+    ib_TimelineSemaphore semaphore = {
         .LastSignalValue = initialValue
     };
 
@@ -189,12 +189,12 @@ ib_timelineSemaphore ib_allocTimelineSemaphore(ib_Core* core, uint64_t initialVa
     return semaphore;
 }
 
-void ib_freeTimelineSemaphore(ib_Core* core, ib_timelineSemaphore* semaphore)
+void ib_freeTimelineSemaphore(ib_Core* core, ib_TimelineSemaphore* semaphore)
 {
     vkDestroySemaphore(core->LogicalDevice, semaphore->Semaphore, ib_NoVkAllocator);
 }
 
-void ib_waitTimelineSemaphore(ib_Core* core, ib_timelineSemaphore* semaphore)
+void ib_waitTimelineSemaphore(ib_Core* core, ib_TimelineSemaphore* semaphore)
 {
     vkWaitSemaphores(core->LogicalDevice, &(VkSemaphoreWaitInfo)
                      {
@@ -2574,7 +2574,7 @@ static ib_AccelerationStructureData buildAccelerationStructureInternal(
     VkAccelerationStructureBuildGeometryInfoKHR* buildInfo,
     uint32_t* primitiveCount,
     iba_StackAllocator* scratchMemoryStack,
-    ib_timelineSemaphore* buildingSemaphore)
+    ib_TimelineSemaphore* buildingSemaphore)
 {
     ib_AccelerationStructureData out = { 0 };
   
@@ -2684,7 +2684,7 @@ static ib_AccelerationStructureData buildAccelerationStructureInternal(
     return out;
 }
 
-ib_BLAS ib_allocBLAS(ib_Raytracing* raytracing, ib_BLASDesc desc, iba_StackAllocator* scratchMemoryStack, ib_timelineSemaphore* buildingSemaphore)
+ib_BLAS ib_allocBLAS(ib_Raytracing* raytracing, ib_BLASDesc desc, iba_StackAllocator* scratchMemoryStack, ib_TimelineSemaphore* buildingSemaphore)
 {
     ib_assert(desc.Triangles.Vertices != NULL && desc.Triangles.Indices != NULL);
 
@@ -2724,7 +2724,7 @@ ib_BLAS ib_allocBLAS(ib_Raytracing* raytracing, ib_BLASDesc desc, iba_StackAlloc
     return blas;
 }
 
-ib_TLAS ib_allocTLAS(ib_Raytracing* raytracing, ib_TLASDesc desc, iba_StackAllocator* scratchMemoryStack, ib_timelineSemaphore* buildingSemaphore)
+ib_TLAS ib_allocTLAS(ib_Raytracing* raytracing, ib_TLASDesc desc, iba_StackAllocator* scratchMemoryStack, ib_TimelineSemaphore* buildingSemaphore)
 {
     ib_assert(desc.InstancesBuffer != NULL);
 

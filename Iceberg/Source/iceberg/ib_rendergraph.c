@@ -770,73 +770,75 @@ VkCommandBuffer ibr_allocTransientCommandBuffer(ibr_RenderGraph* graph, ib_Queue
 
 void ibr_submitCommandBuffers(ibr_RenderGraph* graph, ibr_SubmitCommandBufferDesc desc)
 {
-	uint32_t maxCommandCount = ib_srangeCapacity(desc.CommandBuffers);
-	VkCommandBufferSubmitInfo* commands = (VkCommandBufferSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkCommandBufferSubmitInfo) * maxCommandCount, alignof(VkCommandBufferSubmitInfo));
-	uint32_t commandCount = 0;
-	for (VkCommandBuffer* iter = ib_srangeBegin(desc.CommandBuffers),
-		*end = ib_srangeEnd(desc.CommandBuffers); iter != end; iter++)
-	{
-		if (*iter == VK_NULL_HANDLE)
-		{
-			break;
-		}
+    uint32_t maxCommandCount = ib_srangeCapacity(desc.CommandBuffers);
+    VkCommandBufferSubmitInfo* commands = (VkCommandBufferSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkCommandBufferSubmitInfo) * maxCommandCount, alignof(VkCommandBufferSubmitInfo));
+    uint32_t commandCount = 0;
+    for (VkCommandBuffer* iter = ib_srangeBegin(desc.CommandBuffers),
+        *end = ib_srangeEnd(desc.CommandBuffers); iter != end; iter++)
+    {
+        if (*iter == VK_NULL_HANDLE)
+        {
+            break;
+        }
 
-		commands[commandCount++] = (VkCommandBufferSubmitInfo)
-		{
-			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-			.commandBuffer = *iter,
-		};
-	}
+        commands[commandCount++] = (VkCommandBufferSubmitInfo)
+        {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+            .commandBuffer = *iter,
+        };
+    }
 
-	uint32_t maxWaitSemaphores = ib_srangeCapacity(desc.WaitSemaphores);
-	VkSemaphoreSubmitInfo* waitSemaphores = (VkSemaphoreSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkSemaphoreSubmitInfo) * maxWaitSemaphores, alignof(VkSemaphoreSubmitInfo));
-	uint32_t waitSemaphoreCount = 0;
-	for (VkSemaphore* iter = ib_srangeBegin(desc.WaitSemaphores),
-		*end = ib_srangeEnd(desc.WaitSemaphores); iter != end; iter++)
-	{
-		if (*iter == VK_NULL_HANDLE)
-		{
-			break;
-		}
+    uint32_t maxWaitSemaphores = ib_srangeCapacity(desc.WaitSemaphores);
+    VkSemaphoreSubmitInfo* waitSemaphores = (VkSemaphoreSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkSemaphoreSubmitInfo) * maxWaitSemaphores, alignof(VkSemaphoreSubmitInfo));
+    uint32_t waitSemaphoreCount = 0;
+    for (ibr_SemaphoreSubmit* iter = ib_srangeBegin(desc.WaitSemaphores),
+        *end = ib_srangeEnd(desc.WaitSemaphores); iter != end; iter++)
+    {
+        if (iter->Semaphore == VK_NULL_HANDLE)
+        {
+            break;
+        }
 
-		waitSemaphores[waitSemaphoreCount++] = (VkSemaphoreSubmitInfo)
-		{
-			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-			.semaphore = *iter,
-			.stageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-		};
-	}
+        waitSemaphores[waitSemaphoreCount++] = (VkSemaphoreSubmitInfo)
+        {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+            .semaphore = iter->Semaphore,
+            .stageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            .value = iter->Value
+        };
+    }
 
-	uint32_t maxSignalSemaphores = ib_srangeCapacity(desc.SignalSemaphores);
-	VkSemaphoreSubmitInfo* signalSemaphores = (VkSemaphoreSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkSemaphoreSubmitInfo) * maxSignalSemaphores, alignof(VkSemaphoreSubmitInfo));
-	uint32_t signalSemaphoreCount = 0;
-	for (VkSemaphore* iter = ib_srangeBegin(desc.SignalSemaphores),
-		*end = ib_srangeEnd(desc.SignalSemaphores); iter != end; iter++)
-	{
-		if (*iter == VK_NULL_HANDLE)
-		{
-			break;
-		}
+    uint32_t maxSignalSemaphores = ib_srangeCapacity(desc.SignalSemaphores);
+    VkSemaphoreSubmitInfo* signalSemaphores = (VkSemaphoreSubmitInfo*)ibr_allocTransientMemory(graph, sizeof(VkSemaphoreSubmitInfo) * maxSignalSemaphores, alignof(VkSemaphoreSubmitInfo));
+    uint32_t signalSemaphoreCount = 0;
+    for (ibr_SemaphoreSubmit* iter = ib_srangeBegin(desc.SignalSemaphores),
+        *end = ib_srangeEnd(desc.SignalSemaphores); iter != end; iter++)
+    {
+        if (iter->Semaphore == VK_NULL_HANDLE)
+        {
+            break;
+        }
 
-		signalSemaphores[signalSemaphoreCount++] = (VkSemaphoreSubmitInfo)
-		{
-			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-			.semaphore = *iter,
-			.stageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-		};
-	}
+        signalSemaphores[signalSemaphoreCount++] = (VkSemaphoreSubmitInfo)
+        {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+            .semaphore = iter->Semaphore,
+            .stageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            .value = iter->Value
+        };
+    }
 
-	VkSubmitInfo2 submitInfo = (VkSubmitInfo2)
-	{
-		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-		.pCommandBufferInfos = commands,
-		.commandBufferInfoCount = commandCount,
-		.pWaitSemaphoreInfos = waitSemaphores,
-		.waitSemaphoreInfoCount = waitSemaphoreCount,
-		.pSignalSemaphoreInfos = signalSemaphores,
-		.signalSemaphoreInfoCount = signalSemaphoreCount
-	};
-	ib_vkCheck(vkQueueSubmit2(graph->Core->Queues[ib_Queue_Graphics].Queue, 1, &submitInfo, desc.SubmitFence));
+    VkSubmitInfo2 submitInfo = (VkSubmitInfo2)
+    {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+        .pCommandBufferInfos = commands,
+        .commandBufferInfoCount = commandCount,
+        .pWaitSemaphoreInfos = waitSemaphores,
+        .waitSemaphoreInfoCount = waitSemaphoreCount,
+        .pSignalSemaphoreInfos = signalSemaphores,
+        .signalSemaphoreInfoCount = signalSemaphoreCount
+    };
+    ib_vkCheck(vkQueueSubmit2(graph->Core->Queues[ib_Queue_Graphics].Queue, 1, &submitInfo, desc.SubmitFence));
 }
 
 void ibr_present(ibr_PresentDesc desc)
@@ -1176,50 +1178,50 @@ ibr_ResourceState ibr_textureToPresentState(ibr_Resource* resource)
 
 ibr_ResourceState ibr_bufferState(ibr_Resource* resource, ibr_BufferState state, VkPipelineStageFlags2 stage)
 {
-	ib_assert(resource->Type == ibr_ResourceType_Buffer);
+    ib_assert(resource->Type == ibr_ResourceType_Buffer);
 
-	switch (state)
-	{
-		case ibr_BufferState_Write:
-			return (ibr_ResourceState)
-		{
-			.Resource = resource,
-			.ReleaseAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-			.AcquireAndReleaseStageMask = stage
-		};
-		case ibr_BufferState_Read:
-			return (ibr_ResourceState)
-		{
-			.Resource = resource,
-			.AcquireAccessMask = VK_ACCESS_SHADER_READ_BIT,
-			.AcquireAndReleaseStageMask = stage,
-		};
-		case ibr_BufferState_ReadWrite:
-			return (ibr_ResourceState)
-		{
-			.Resource = resource,
-			.AcquireAccessMask = VK_ACCESS_SHADER_READ_BIT,
-			.ReleaseAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-			.AcquireAndReleaseStageMask = stage,
-		};
-		case ibr_BufferState_TransferSrc:
-			ib_assert(stage == VK_PIPELINE_STAGE_TRANSFER_BIT || stage == VK_PIPELINE_STAGE_2_COPY_BIT);
-			return (ibr_ResourceState)
-			{
-				.Resource = resource,
-				.AcquireAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-				.AcquireAndReleaseStageMask = stage,
-			};
-		case ibr_BufferState_TransferDst:
-			ib_assert(stage == VK_PIPELINE_STAGE_TRANSFER_BIT || stage == VK_PIPELINE_STAGE_2_COPY_BIT);
-			return (ibr_ResourceState)
-			{
-				.Resource = resource,
-				.ReleaseAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-				.AcquireAndReleaseStageMask = stage,
-			};
-	}
-	
-	ib_assert(false); // Unexpected buffer state!
-	return (ibr_ResourceState) { 0 };
+    switch (state)
+    {
+        case ibr_BufferState_Write:
+            return (ibr_ResourceState)
+        {
+            .Resource = resource,
+            .ReleaseAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+            .AcquireAndReleaseStageMask = stage
+        };
+        case ibr_BufferState_Read:
+            return (ibr_ResourceState)
+        {
+            .Resource = resource,
+            .AcquireAccessMask = VK_ACCESS_SHADER_READ_BIT,
+            .AcquireAndReleaseStageMask = stage,
+        };
+        case ibr_BufferState_ReadWrite:
+            return (ibr_ResourceState)
+        {
+            .Resource = resource,
+            .AcquireAccessMask = VK_ACCESS_SHADER_READ_BIT,
+            .ReleaseAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+            .AcquireAndReleaseStageMask = stage,
+        };
+        case ibr_BufferState_TransferSrc:
+            ib_assert(stage == VK_PIPELINE_STAGE_TRANSFER_BIT || stage == VK_PIPELINE_STAGE_2_COPY_BIT);
+            return (ibr_ResourceState)
+            {
+                .Resource = resource,
+                .AcquireAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+                .AcquireAndReleaseStageMask = stage,
+            };
+        case ibr_BufferState_TransferDst:
+            ib_assert(stage == VK_PIPELINE_STAGE_TRANSFER_BIT || stage == VK_PIPELINE_STAGE_2_COPY_BIT);
+            return (ibr_ResourceState)
+            {
+                .Resource = resource,
+                .ReleaseAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                .AcquireAndReleaseStageMask = stage,
+            };
+    }
+
+    ib_assert(false); // Unexpected buffer state!
+    return (ibr_ResourceState) { 0 };
 }
