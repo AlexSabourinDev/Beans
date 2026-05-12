@@ -7,6 +7,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BasicPlayground", "BasicPla
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DisassemblyViewer", "DisassemblyViewer\DisassemblyViewer.vcxproj", "{DC21E3D4-E9D7-4063-B188-3E2769E3C73B}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ComputePlayground", "ComputePlayground\ComputePlayground.vcxproj", "{395657E9-8BD8-48EE-83F6-6F61EC5F280F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -27,6 +29,12 @@ Global
 		{DC21E3D4-E9D7-4063-B188-3E2769E3C73B}.Release|x64.ActiveCfg = Release|x64
 		{DC21E3D4-E9D7-4063-B188-3E2769E3C73B}.Release|x64.Build.0 = Release|x64
 		{DC21E3D4-E9D7-4063-B188-3E2769E3C73B}.Release|x86.ActiveCfg = Release|x64
+		{395657E9-8BD8-48EE-83F6-6F61EC5F280F}.Debug|x64.ActiveCfg = Debug|x64
+		{395657E9-8BD8-48EE-83F6-6F61EC5F280F}.Debug|x64.Build.0 = Debug|x64
+		{395657E9-8BD8-48EE-83F6-6F61EC5F280F}.Debug|x86.ActiveCfg = Debug|x64
+		{395657E9-8BD8-48EE-83F6-6F61EC5F280F}.Release|x64.ActiveCfg = Release|Win32
+		{395657E9-8BD8-48EE-83F6-6F61EC5F280F}.Release|x86.ActiveCfg = Release|Win32
+		{395657E9-8BD8-48EE-83F6-6F61EC5F280F}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

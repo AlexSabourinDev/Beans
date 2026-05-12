@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <FxCompile Include="..\Assets\Shaders\compute_playground.hlsl" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.c" />
+    <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_allocator.c">
+      <Filter>Iceberg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_core.c">
+      <Filter>Iceberg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_rendergraph.c">
+      <Filter>Iceberg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_util.c">
+      <Filter>Iceberg</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Iceberg">
+      <UniqueIdentifier>{ff5f3724-aad0-470d-8cc1-2f689537fead}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_allocator.h">
+      <Filter>Iceberg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_core.h">
+      <Filter>Iceberg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_rendergraph.h">
+      <Filter>Iceberg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_util.h">
+      <Filter>Iceberg</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

@@ -9,38 +9,114 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stddef.h>
+
+iba_StackAllocator StackAllocator = { 0 };
+
+typedef struct
+{
+    uint32_t ItemCount;
+    uint32_t Capacity;
+} ib_DynArrHeader;
+
+typedef struct
+{
+    void*(*Alloc)(void* userData, size_t size, size_t alignment);
+    void(*Free)(void* userData, void* memory);
+    void* UserData;
+} ib_DynArrAllocator;
+
+static void ib_dynArrAddImpl(void** memory,
+    ib_DynArrHeader* header,
+    size_t elementSize,
+    size_t alignment,
+    const ib_DynArrAllocator* allocator)
+{
+    ib_assert((header->Capacity == 0 && *memory == NULL) || *memory != NULL);
+    header->ItemCount++;
+    if (header->ItemCount > header->Capacity)
+    {
+        uint32_t oldCapacity = header->Capacity;
+        header->Capacity = (oldCapacity == 0) ? 4 : oldCapacity * 2;
+        void* newMemory = allocator->Alloc(allocator->UserData, header->Capacity * elementSize, alignment);
+        if (oldCapacity > 0)
+        {
+            void* oldMemory = *memory;
+            memcpy(newMemory, oldMemory, oldCapacity * sizeof(elementSize));
+            allocator->Free(allocator->UserData, oldMemory);
+        }
+        *memory = newMemory;
+    }
+}
+
+#define ib_dynArr(Type) \
+    struct \
+    { \
+        ib_DynArrHeader Header; \
+        Type* Memory; \
+    }
+
+#define ib_dynArrAdd(arr, allocator) \
+    ( \
+        ib_dynArrAddImpl(&((arr)->Memory), &((arr)->Header), sizeof((arr)->Memory[0]), alignof(typeof((arr)->Memory[0])), allocator), \
+        &(arr)->Memory[(arr)->Header.ItemCount - 1] \
+    )
 
 static ib_Core Core;
 static ibr_RenderGraph Graphs[ib_FramebufferCount];
 static ib_Surface Surface;
 
-static void* transientAlloc(iba_StackAllocator* allocator, size_t size, size_t alignment)
+static void* transientAlloc(size_t size, size_t alignment)
 {
-    iba_StackAllocation allocation = iba_stackAlloc(allocator, (iba_StackAllocationRequest){ size, alignment });
+    iba_StackAllocation allocation = iba_stackAlloc(&StackAllocator, (iba_StackAllocationRequest){ size, alignment });
     return iba_cpuStackAllocToMemory(allocation);
 }
+
+static void* dynArrStackAlloc(void* userData, size_t size, size_t alignment)
+{
+    return transientAlloc(size, alignment);
+}
+
+static void dynArrStackFree(void* userData, void* memory)
+{
+    // Does nothing.
+}
+
+static const ib_DynArrAllocator DynArrStackAllocator =
+{
+    .Alloc = &dynArrStackAlloc,
+    .Free = &dynArrStackFree
+};
+
+typedef struct
+{
+    ib_Texture* Texture;
+    ib_WriteData Data;
+} TextureWrite;
+
+ib_dynArr(TextureWrite) TextureWrites;
 
 // Platform... stuff. I'd like to put this somewhere.
 // Maybe something line cranberry_platform
 static char CurrentWorkingDirectory[256];
-static void readWholeFileFromHandle(iba_StackAllocator* allocator, FILE* file, void** output, size_t* outputSize)
+static void readWholeFileFromHandle(FILE* file, void** output, size_t* outputSize)
 {
     fseek(file, 0, SEEK_END);
     long fileSize = ftell(file);
     fseek(file, 0, SEEK_SET);
 
-    *output = transientAlloc(allocator, fileSize, 1u);
+    *output = transientAlloc(fileSize, 1u);
     *outputSize = fileSize;
 
     fread(*output, fileSize, 1, file);
 }
 
-static bool readWholeFile(iba_StackAllocator* allocator, char const* path, void** output, size_t* outputSize)
+static bool readWholeFile(char const* path, void** output, size_t* outputSize)
 {
     FILE *file = fopen(path, "rb");
     if (file != NULL)
     {
-        readWholeFileFromHandle(allocator, file, output, outputSize);
+        readWholeFileFromHandle(file, output, outputSize);
         fclose(file);
         return true;
     }
@@ -82,16 +158,16 @@ static c16i2 packNormal(cv3 normal)
     return cv2_to_c16i2(octahedral);
 }
 
-static MeshDesc createSphereMesh(uint32_t latitudeSegments, uint32_t longitudeSegments, float radius, iba_StackAllocator* allocator)
+static MeshDesc createSphereMesh(uint32_t latitudeSegments, uint32_t longitudeSegments, float radius)
 {
     MeshDesc mesh = {0};
     uint32_t segmentQuadCount = latitudeSegments * longitudeSegments;
     uint32_t segmentIndexCount = segmentQuadCount * 6;
     uint32_t segmentVertexCount = segmentQuadCount * 4;
 
-    mesh.Indices = (uint16_t*)transientAlloc(allocator, segmentIndexCount * sizeof(uint16_t), alignof(uint16_t));
-    mesh.Positions = (c16i3*)transientAlloc(allocator, segmentVertexCount * sizeof(c16i3), alignof(c16i3));
-    mesh.Normals = (c16i2*)transientAlloc(allocator, segmentVertexCount * sizeof(c16i2), alignof(c16i2));
+    mesh.Indices = (uint16_t*)transientAlloc(segmentIndexCount * sizeof(uint16_t), alignof(uint16_t));
+    mesh.Positions = (c16i3*)transientAlloc(segmentVertexCount * sizeof(c16i3), alignof(c16i3));
+    mesh.Normals = (c16i2*)transientAlloc(segmentVertexCount * sizeof(c16i2), alignof(c16i2));
     mesh.IndexCount = segmentIndexCount;
     mesh.PositionCount = segmentVertexCount;
     mesh.NormalCount = segmentVertexCount;
@@ -197,6 +273,7 @@ ib_ShaderInputDesc const RasterizerInputs[] =
 ib_ComputePipeline RasterizerCompute;
 
 Mesh SphereMesh;
+
 static void init(void)
 {
     GetCurrentDirectoryA(ib_arrayCount(CurrentWorkingDirectory), CurrentWorkingDirectory);
@@ -232,20 +309,18 @@ static void init(void)
     // Use this stack allocator during init for any temporary memory.
     // Might use frame 0's stack allocator instead in the future.
     size_t const transientStackPageSize = 1024u * 1024u;
-    iba_StackAllocator initStackAllocator = { 0 };
     iba_initCpuStackAllocator((iba_CpuStackAllocatorDesc)
                            {
                                .PageSize = transientStackPageSize
                            },
-                           &initStackAllocator);
+                           &StackAllocator);
 
-    MeshDesc sphereMeshDesc = createSphereMesh(32, 32, 1.0f, &initStackAllocator);
+    MeshDesc sphereMeshDesc = createSphereMesh(32, 32, 1.0f);
     SphereMesh = allocMesh(sphereMeshDesc);
 
-    // TODO: Need a barrier for writes from CPU->GPU
     void* rasterizerSpv;
     size_t rasterizerSpvSize;
-    readWholeFile(&initStackAllocator, "../../CompiledAssets/Shaders/rasterizer.spv", &rasterizerSpv, &rasterizerSpvSize);
+    readWholeFile("../../CompiledAssets/Shaders/rasterizer.spv", &rasterizerSpv, &rasterizerSpvSize);
     RasterizerCompute = ib_allocComputePipeline(&Core, (ib_ComputePipelineDesc)
                             {
                                 .ShaderDesc = (ib_ShaderDesc)
@@ -261,11 +336,12 @@ static void init(void)
                                 }
                             });
 
-    iba_killStackAllocator(&initStackAllocator);
+    TextureWrite* write = ib_dynArrAdd(&TextureWrites, &DynArrStackAllocator);
 }
 
 static void kill(void)
 {
+    iba_killStackAllocator(&StackAllocator);
     vkDeviceWaitIdle(Core.LogicalDevice);
     freeMesh(&SphereMesh);
     ib_freeComputePipeline(&Core, &RasterizerCompute);
@@ -438,6 +514,11 @@ static void update(void)
     }
 
     ActiveFrame = (ActiveFrame + 1) % ib_FramebufferCount;
+
+    // Reset at the end of the frame,
+    // this allows init to use the stack allocator as well
+    // if ever we multi-thread, this should happen at the very end of the frame
+    iba_stackReset(&StackAllocator);
 }
 
 void events(sapp_event const* event)

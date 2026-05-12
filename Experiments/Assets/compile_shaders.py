@@ -3,7 +3,7 @@ import os
 import subprocess
 
 def compileShader(input, output, shaderType, entryPoint):
-    if(os.path.getmtime(input) < os.path.getmtime(output)):
+    if(os.path.exists(output) and os.path.getmtime(input) < os.path.getmtime(output)):
         print("Shader Compiler: Input file older than built file.")
         return
 
