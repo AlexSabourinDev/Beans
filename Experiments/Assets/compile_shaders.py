@@ -25,8 +25,11 @@ def compileShader(input, output, shaderType, entryPoint):
                     "-WX",
                     "-O3",
                     "-enable-16bit-types",
-                    "-HV 2021",
+                    "-HV 202x",
                     "-Zpr",
+                    "-Ges",
+                    "-Wconversion",
+                    "-all-resources-bound",
                     f"-Fo {output}",
                     input]
 

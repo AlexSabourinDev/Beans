@@ -4,6 +4,7 @@
 #include <Windows.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <immintrin.h>
 
 // Platform... stuff. I'd like to put this somewhere.
 // Maybe something line cranberry_platform
@@ -43,6 +44,13 @@ static void compileShader(char const* shader, char const *shaderOutput, char con
     system(shaderCompilation);
 }
 
+uint16_t f32tof16(float aV)
+{
+	__m128 V1 = _mm_set_ss(aV);
+    __m128i V2 = _mm_cvtps_ph(V1, _MM_FROUND_TO_NEAREST_INT);
+    return (uint16_t)(_mm_extract_epi16(V2, 0));
+}
+
 int main()
 {
     GetCurrentDirectoryA(ib_arrayCount(CurrentWorkingDirectory), CurrentWorkingDirectory);
@@ -78,72 +86,107 @@ int main()
                             });
     free(computeSpv);
 
-    ibr_RenderGraph* graph = &graphs[0];
-    ibr_beginFrame(graph, (ibr_BeginFrameDesc) { .FrameIndex = 0 });
+	uint32_t activeFrameIndex = 0;
+	while(true)
+	{
+		ibr_RenderGraph* graph = &graphs[activeFrameIndex];
+		ibr_beginFrame(graph, (ibr_BeginFrameDesc) { .FrameIndex = activeFrameIndex });
 
-    VkCommandBuffer commands = ibr_allocTransientCommandBuffer(graph, ib_Queue_Compute);
-    ib_beginCommandBuffer(&core, commands);
+		VkCommandBuffer commands = ibr_allocTransientCommandBuffer(graph, ib_Queue_Graphics);
+		ib_beginCommandBuffer(&core, commands);
 
-    typedef struct
-    {
-        float _0;
-        float _1;
-        float _2;
-        float _3;
-        uint16_t _4;
-        uint16_t _5;
-        uint16_t _6;
-        uint16_t _7;
-    } FrameData;
+		typedef struct
+		{
+			union
+			{
+				struct
+				{
+					uint16_t x, y;
+				};
+				uint32_t v;
+			};
+		} float16_t2;
 
-    FrameData data = (FrameData)
-    {
-        0.0f, 0.0f, 0.0f, 0.0f,
-        0x3C00, 0xBC80, 0x3C00, 0xBC00
-    };
+		typedef struct
+		{
+			float Padding[8][4];
+			float Padding0[3];
+			float Padding1;
+			float Padding2[4];
+			float _0;
+			uint32_t _1;
+			uint32_t _2;
+			float16_t2 _3;
+			float16_t2 _4;
+			float16_t2 _5;
+			float16_t2 _6;
+			float16_t2 _7;
+			float Padding3[4];
+		} Data;
 
-    ibr_Resource resource = ibr_allocPassResource(graph, commands, (ibr_ResourceDesc)
-                          {
-                              .Type = ibr_ResourceType_Buffer,
-                              .Flags = ibr_ResourceFlag_Transient,
-                              .BufferDesc =
-                              {
-                                  .Usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                  .Size = sizeof(FrameData),
-                                  .RequiredMemoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-                              }
-                          });
+		Data data = (Data)
+		{
+			0.432154f, 0.432154f, 0.432154f, 0.432154f,
+			0.0f,
+			._1 = rand(),
+			._2 = rand(),
+			._3 = { .x = f32tof16((float)rand() / (float)RAND_MAX), .y = f32tof16((float)rand() / (float)RAND_MAX) },
+			._4 = { .x = 0x3D62, .y = 0xBB84 }
+		};
 
-    ibr_writeResource(graph, commands, &resource, (ib_WriteData)
-                      {
-                          .Data = &data,
-                          .Size = sizeof(data),
-                      });
+		ibr_Resource resource = ibr_allocPassResource(graph, commands, (ibr_ResourceDesc)
+													  {
+														  .Type = ibr_ResourceType_Buffer,
+														  .Flags = ibr_ResourceFlag_Transient,
+														  .BufferDesc =
+														  {
+															  .Usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+															  .Size = sizeof(Data),
+															  .RequiredMemoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+														  }
+													  });
 
-    ib_ShaderInput input = ibr_resourcesToShaderInput(graph, (ibr_ResourceToShaderInputDesc)
-                               {
-                                   .Layout = &pipeline.InlineShaderInputLayouts[0],
-                                   .ShaderInputs = ib_staticArrayRange(computeInputs),
-                                   .Resources = ib_staticArrayRange(
-                                       (ibr_Resource*[])
-                                       {
-                                           &resource
-                                       })
-                               });
-    vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_COMPUTE,
-                                pipeline.Layout,
-                                0u,
-                                1u,
-                                &input.DescriptorSet,
-                                0u,
-                                NULL);
-    vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.VulkanPipeline);
-    vkCmdDispatch(commands, 1u, 1u, 1u);
+		ibr_writeResource(graph, commands, &resource, (ib_WriteData)
+						  {
+							  .Data = &data,
+							  .Size = sizeof(data),
+						  });
 
-    ib_endAndSubmitCommandBuffer(&core, commands, ib_Queue_Compute);
-    ibr_endFrame(graph);
+		ib_ShaderInput input = ibr_resourcesToShaderInput(graph, (ibr_ResourceToShaderInputDesc)
+														  {
+															  .Layout = &pipeline.InlineShaderInputLayouts[0],
+															  .ShaderInputs = ib_staticArrayRange(computeInputs),
+															  .Resources = ib_staticArrayRange(
+																  (ibr_Resource*[])
+																  {
+																	  &resource
+																  })
+														  });
+		vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_COMPUTE,
+								pipeline.Layout,
+								0u,
+								1u,
+								&input.DescriptorSet,
+								0u,
+								NULL);
+		vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.VulkanPipeline);
+	
+		vkCmdDispatch(commands, 128u, 128u, 1u);
 
-    vkDeviceWaitIdle(core.LogicalDevice);
+		vkEndCommandBuffer(commands);
+		ibr_submitCommandBuffers(graph, (ibr_SubmitCommandBufferDesc)
+								 {
+									 .Queue = ib_Queue_Graphics,
+									 .CommandBuffers = commands,
+									 .SubmitFence = graph->FrameFence
+								 });
+		ibr_endFrame(graph);
+
+		vkDeviceWaitIdle(core.LogicalDevice);
+		Sleep(16);
+
+		activeFrameIndex = (activeFrameIndex + 1) % 2;
+	}
 
     ib_freeComputePipeline(&core, &pipeline);
     ibr_killRenderGraphs(&core, graphs, ib_arrayCount(graphs));

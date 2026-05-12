@@ -338,8 +338,7 @@ VkBool32 ib_vkValidationCallback(
     ib_potentiallyUnused(messageType);
     ib_potentiallyUnused(pUserData);
 
-    if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
-        || (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT))
+    if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
     {
         ib_assert(false, pCallbackData->pMessage);
     }
@@ -374,6 +373,9 @@ const char *ib_DeviceExtensions[] =
     VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
     VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME,
     VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+#ifdef IB_DEBUG
+	VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME,
+#endif // IB_DEBUG
 };
 
 const char* ib_RaytracingDeviceExtensions[] =
@@ -573,7 +575,7 @@ void ib_initCore(ib_CoreDesc desc, ib_Core* outCore)
         uint32_t propertyCount;
         ib_vkCheck(vkEnumerateDeviceExtensionProperties(outCore->PhysicalDevice, NULL, &propertyCount, NULL));
 
-#define maxPhysicalExtensionCount 256
+#define maxPhysicalExtensionCount 1024
         propertyCount = ib_min(maxPhysicalExtensionCount, propertyCount);
         VkExtensionProperties extensions[maxPhysicalExtensionCount];
         ib_vkCheck(vkEnumerateDeviceExtensionProperties(outCore->PhysicalDevice, NULL, &propertyCount, extensions));
