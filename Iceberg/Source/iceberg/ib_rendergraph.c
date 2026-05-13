@@ -1247,6 +1247,7 @@ void ibr_initDefaultResources(ib_Core* core, ibr_DefaultResources* resources)
             .Format = VK_FORMAT_R8G8B8A8_UNORM,
             .Extent = { 1, 1 },
             .Aspect = VK_IMAGE_ASPECT_COLOR_BIT,
+            .DebugName = "DefaultTexture_White"
         },
         [ibr_DefaultTexture_Checkerboard] = (ib_TextureDesc)
         {
@@ -1254,6 +1255,7 @@ void ibr_initDefaultResources(ib_Core* core, ibr_DefaultResources* resources)
             .Format = VK_FORMAT_R8G8B8A8_UNORM,
             .Extent = { 2, 2 },
             .Aspect = VK_IMAGE_ASPECT_COLOR_BIT,
+            .DebugName = "DefaultTexture_Checkerboard"
         }
     };
 
