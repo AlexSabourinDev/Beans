@@ -106,13 +106,6 @@ typedef struct
 
 typedef struct
 {
-    void const* Data;
-    size_t Size;
-    size_t Alignment;
-} ib_WriteData;
-
-typedef struct
-{
     VkImageUsageFlags Usage;
     VkFormat Format;
     VkExtent3D Extent;

@@ -146,7 +146,7 @@ int main()
 														  }
 													  });
 
-		ibr_writeResource(graph, commands, &resource, (ib_WriteData)
+		ibr_writeResource(graph, commands, &resource, (ibr_WriteData)
 						  {
 							  .Data = &data,
 							  .Size = sizeof(data),

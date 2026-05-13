@@ -642,8 +642,8 @@ void ibr_writeResources(ibr_RenderGraph* graph, VkCommandBuffer commands, ibr_Wr
         if (resource->Type == ibr_ResourceType_Texture)
         {
             ib_Texture* texture = resource->Texture;
-            ibr_TransientGpuMemory gpuMemory = ibr_allocTransientGpuMemory(graph, iter->WriteData.Size, iter->WriteData.Alignment);
-            memcpy(gpuMemory.CpuMemory, iter->WriteData.Data, iter->WriteData.Size);
+            ibr_TransientGpuMemory gpuMemory = ibr_allocTransientGpuMemory(graph, iter->Size, iter->Alignment);
+            memcpy(gpuMemory.CpuMemory, iter->Data, iter->Size);
 
             // Image copy
             {
@@ -675,8 +675,8 @@ void ibr_writeResources(ibr_RenderGraph* graph, VkCommandBuffer commands, ibr_Wr
         {
             ib_Buffer* buffer = resource->Buffer;
 
-            ibr_TransientGpuMemory gpuMemory = ibr_allocTransientGpuMemory(graph, iter->WriteData.Size, iter->WriteData.Alignment);
-            memcpy(gpuMemory.CpuMemory, iter->WriteData.Data, iter->WriteData.Size);
+            ibr_TransientGpuMemory gpuMemory = ibr_allocTransientGpuMemory(graph, iter->Size, iter->Alignment);
+            memcpy(gpuMemory.CpuMemory, iter->Data, iter->Size);
 
             // Buffer copy
             {
@@ -684,7 +684,7 @@ void ibr_writeResources(ibr_RenderGraph* graph, VkCommandBuffer commands, ibr_Wr
                 {
                     .srcOffset = gpuMemory.BufferOffset,
                     .dstOffset = 0u,
-                    .size = iter->WriteData.Size
+                    .size = iter->Size
                 };
 
                 vkCmdCopyBuffer(commands, gpuMemory.Buffer, buffer->VulkanBuffer, 1, &copyRegion);
@@ -1305,24 +1305,18 @@ void ibr_uploadDefaultResources(ibr_RenderGraph* graph, VkCommandBuffer commandB
         [ibr_DefaultTexture_White] =
         {
             &writeResources[ibr_DefaultTexture_White],
-            (ib_WriteData)
-            {
-                .Data = (uint8_t[]) { 255, 255, 255, 255 },
-                .Size = 4
-            }
+            .Data = (uint8_t[]) { 255, 255, 255, 255 },
+            .Size = 4
         },
         [ibr_DefaultTexture_Checkerboard] =
         {
             &writeResources[ibr_DefaultTexture_Checkerboard],
-            (ib_WriteData)
+            .Data = (uint8_t[]) 
             {
-                .Data = (uint8_t[]) 
-                {
-                    255, 255, 255, 255, 0, 0, 0, 0,
-                    0, 0, 0, 0, 255, 255, 255, 255,
-                },
-                .Size = 16
-            }
+                255, 255, 255, 255, 0, 0, 0, 0,
+                0, 0, 0, 0, 255, 255, 255, 255,
+            },
+            .Size = 16
         }
     };
 

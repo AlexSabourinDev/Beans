@@ -363,7 +363,7 @@ static void update(void)
                                    }
                                });
 
-        ibr_writeResource(graph, commands, &rasterizerParams, (ib_WriteData)
+        ibr_writeResource(graph, commands, &rasterizerParams, (ibr_WriteData)
                           {
                               .Data = &(RasterizerParams)
                               {

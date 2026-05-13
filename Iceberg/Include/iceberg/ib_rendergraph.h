@@ -14,6 +14,13 @@
 
 typedef struct
 {
+    void const* Data;
+    size_t Size;
+    size_t Alignment;
+} ibr_WriteData;
+
+typedef struct
+{
     ib_Timer Timer;
     char const* Name;
 } ibr_ProfilingScope;
@@ -194,7 +201,9 @@ ibr_ResourceDesc ibr_textureResourceDesc(ib_Texture* texture, VkImageLayout layo
 typedef struct
 {
     ibr_Resource* Resource;
-    ib_WriteData WriteData;
+    void const* Data;
+    size_t Size;
+    size_t Alignment;
 } ibr_WriteResourceDesc;
 
 typedef struct
@@ -203,14 +212,16 @@ typedef struct
 } ibr_WriteResourcesDesc;
 void ibr_writeResources(ibr_RenderGraph* graph, VkCommandBuffer commands, ibr_WriteResourcesDesc desc);
 
-static void ibr_writeResource(ibr_RenderGraph* graph, VkCommandBuffer commands, ibr_Resource* resource, ib_WriteData writeData)
+static void ibr_writeResource(ibr_RenderGraph* graph, VkCommandBuffer commands, ibr_Resource* resource, ibr_WriteData writeData)
 {
     ibr_writeResources(graph, commands, (ibr_WriteResourcesDesc)
                        {
                            (ibr_WriteResourceDesc)
                            {
                                resource,
-                               writeData
+                               writeData.Data,
+                               writeData.Size,
+                               writeData.Alignment
                            }
                        });
 }
