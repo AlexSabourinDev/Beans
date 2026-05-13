@@ -212,121 +212,6 @@ typedef struct StackGpuMemoryPage
     iba_GpuAllocation PageAlloc;
 } StackGpuMemoryPage;
 
-// TODO: Replace with page allocator interface
-static iba_PageHeader* allocStagingMemoryPage(void* userData, size_t pageSize)
-{
-    StackGpuMemoryPage* page = calloc(1, sizeof(StackGpuMemoryPage));
-
-    iba_GpuAllocator* generalAllocator = (iba_GpuAllocator*)userData;
-    VkDevice logicalDevice = generalAllocator->LogicalDevice;
-    VkBufferCreateInfo bufferCreate =
-    {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = pageSize,
-        .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-    };
-    ib_vkCheck(vkCreateBuffer(logicalDevice, &bufferCreate, ib_NoVkAllocator, &page->Buffer));
-
-    VkMemoryRequirements memoryRequirements;
-    vkGetBufferMemoryRequirements(logicalDevice, page->Buffer, &memoryRequirements);
-
-    page->PageAlloc = iba_gpuAlloc(generalAllocator, (iba_GpuAllocationRequest)
-                                   {
-                                       .Size = memoryRequirements.size,
-                                       .Alignment = memoryRequirements.alignment,
-                                       .TypeBits = memoryRequirements.memoryTypeBits,
-                                       .RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                   });
-
-    ib_vkCheck(vkBindBufferMemory(logicalDevice, page->Buffer, page->PageAlloc.Memory, page->PageAlloc.Offset));
-
-    return &page->Header;
-}
-
-static void freeStagingMemoryPage(void* userData, iba_PageHeader* pageHeader)
-{
-    iba_GpuAllocator* generalAllocator = (iba_GpuAllocator*)userData;
-    StackGpuMemoryPage* page = (StackGpuMemoryPage*)pageHeader;
-
-    vkDestroyBuffer(generalAllocator->LogicalDevice, page->Buffer, ib_NoVkAllocator);
-    iba_gpuFree(generalAllocator, &page->PageAlloc);
-    free(page);
-}
-
-// Staging
-uint32_t const ib_StagingPageSize = 1024 * 1024; // 10MB of staging space
-void ib_initStaging(ib_StagingDesc desc, ib_Staging* outStaging)
-{
-    *outStaging = (ib_Staging) { 0 };
-    outStaging->LogicalDevice = desc.LogicalDevice;
-
-    iba_initStackAllocator((iba_StackAllocatorDesc)
-                           {
-                               .PageAllocator =
-                               {
-                                   .AllocPage = &allocStagingMemoryPage,
-                                   .FreePage = &freeStagingMemoryPage,
-                                   .UserData = desc.Allocator
-                               },
-                               .PageSize = ib_StagingPageSize
-                           },
-                           &outStaging->StackAllocator);
-
-    VkSemaphoreTypeCreateInfo timelineSemaphoreCreateInfo =
-    {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
-        .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
-        .initialValue = 0
-    };
-
-    ib_vkCheck(vkCreateSemaphore(desc.LogicalDevice, &(VkSemaphoreCreateInfo)
-                                 {
-                                     .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-                                     .pNext = &timelineSemaphoreCreateInfo
-                                 }, ib_NoVkAllocator, &outStaging->TimelineSemaphore));
-
-    vkCreateCommandPool(desc.LogicalDevice, &(VkCommandPoolCreateInfo)
-                        {
-                            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-                            .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
-                            .queueFamilyIndex = desc.TransferQueueIndex,
-                        }, ib_NoVkAllocator, &outStaging->TransferCommandPool);
-
-    VkCommandBufferAllocateInfo commandBufferAllocateInfo =
-    {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = MaxTransientStagingCommandBuffers,
-        .commandPool = outStaging->TransferCommandPool,
-    };
-
-    ib_vkCheck(vkAllocateCommandBuffers(desc.LogicalDevice, &commandBufferAllocateInfo, outStaging->TransientCommandBuffers));
-    outStaging->ActiveCommandBuffers = 0;
-}
-
-void ib_killStaging(ib_Staging* staging)
-{
-    iba_killStackAllocator(&staging->StackAllocator);
-    vkDestroyCommandPool(staging->LogicalDevice, staging->TransferCommandPool, ib_NoVkAllocator);
-    vkDestroySemaphore(staging->LogicalDevice, staging->TimelineSemaphore, ib_NoVkAllocator);
-}
-
-ib_StagingBuffer ib_requestStagingBuffer(ib_Staging* staging, ib_StagingRequest request)
-{
-    iba_StackAllocation allocation = iba_stackAlloc(&staging->StackAllocator, (iba_StackAllocationRequest) { request.Size, request.Alignment });
-    StackGpuMemoryPage* page = (StackGpuMemoryPage*)allocation.Page;
-	
-    ib_StagingBuffer stagingBuffer =
-    {
-        .Buffer = page->Buffer,
-        .Memory = page->PageAlloc.CPUMemory + allocation.Offset,
-        .Offset = allocation.Offset,
-        .SemaphoreSignalValue = ++staging->LastSemaphoreSignal,
-    };
-
-    return stagingBuffer;
-}
-
 #ifdef IB_DEBUG
 VkBool32 ib_vkValidationCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -750,13 +635,6 @@ void ib_initCore(ib_CoreDesc desc, ib_Core* outCore)
     },
     &outCore->Allocator);
 
-    ib_initStaging(
-        (ib_StagingDesc) {
-        outCore->LogicalDevice,
-        outCore->Queues[ib_Queue_Transfer].Index,
-        &outCore->Allocator,
-    }, &outCore->Staging);
-
     // Create the descriptor pools
     {
         VkDescriptorPoolSize descriptorPoolSizes[] =
@@ -892,7 +770,6 @@ void ib_killCore(ib_Core* core)
     vkDestroyPipelineCache(core->LogicalDevice, core->PipelineCache, ib_NoVkAllocator);
     vkDestroyDescriptorPool(core->LogicalDevice, core->Descriptors.Pool, ib_NoVkAllocator);
 
-    ib_killStaging(&core->Staging);
     iba_killGpuAllocator(&core->Allocator);
 
     vkDestroyDevice(core->LogicalDevice, ib_NoVkAllocator);
@@ -902,21 +779,6 @@ void ib_killCore(ib_Core* core)
 #endif // IB_DEBUG
 
     vkDestroyInstance(core->Instance, ib_NoVkAllocator);
-}
-
-void ib_flushStaging(ib_Core* core, ib_Staging* staging)
-{
-    vkWaitSemaphores(core->LogicalDevice, &(VkSemaphoreWaitInfo)
-                     {
-                         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
-                         .semaphoreCount = 1,
-                         .pSemaphores = &staging->TimelineSemaphore,
-                         .pValues = &staging->LastSemaphoreSignal
-                     }, UINT64_MAX);
-
-    vkResetCommandPool(core->LogicalDevice, staging->TransferCommandPool, 0);
-    staging->ActiveCommandBuffers = 0;
-    iba_stackReset(&staging->StackAllocator);
 }
 
 // CommandBuffer
@@ -1121,19 +983,6 @@ ib_Texture ib_allocTexture(ib_Core* core, ib_TextureDesc desc)
             ib_vkCheck(vkSetDebugUtilsObjectNameEXT(core->LogicalDevice, &imageViewDebugNameInfo));
         }
     }
-
-    if (desc.InitialWrite.Data != NULL)
-    {
-        ib_assert(desc.InitialWrite.Size != 0);
-        ib_writeToTexture(core, (ib_WriteToTextureDesc)
-                          {
-                              .Texture = &texture,
-                              .Data = desc.InitialWrite.Data,
-                              .Size = desc.InitialWrite.Size,
-                              .Alignment = desc.InitialWrite.Alignment
-                          });
-    }
-
     return texture;
 }
 
@@ -1145,117 +994,6 @@ void ib_freeTexture(ib_Core* core, ib_Texture* texture)
         vkDestroyImageView(core->LogicalDevice, texture->View, ib_NoVkAllocator);
         iba_gpuFree(&core->Allocator, &texture->Allocation);
     }
-}
-
-void ib_writeToTexture(ib_Core* core, ib_WriteToTextureDesc desc)
-{
-    if (desc.Alignment == 0)
-    {
-        desc.Alignment = ib_formatToSize(desc.Texture->Format);
-    }
-
-    ib_StagingBuffer stagingBuffer = ib_requestStagingBuffer(&core->Staging, (ib_StagingRequest) { desc.Size, desc.Alignment });
-    memcpy(stagingBuffer.Memory, desc.Data, desc.Size);
-
-    ib_assert(core->Staging.ActiveCommandBuffers < MaxTransientStagingCommandBuffers);
-    VkCommandBuffer commandBuffer = core->Staging.TransientCommandBuffers[core->Staging.ActiveCommandBuffers++];
-    VkCommandBufferBeginInfo beginBufferInfo =
-    {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    };
-    ib_vkCheck(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
-
-    // Image barrier UNDEFINED -> TRANSFER
-    {
-        VkImageMemoryBarrier2 imageBarrier = ib_createTextureBarrier(core,
-                                                                     (ib_TextureBarrierDesc)
-                                                                     {
-                                                                         .Texture = desc.Texture,
-                                                                         .SourceAccessMask = (VkAccessFlags) { 0 },
-                                                                         .DestAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-                                                                         .OldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                                                                         .NewLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                                                         .SourceStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                                                                         .DestStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT
-                                                                     });
-
-        vkCmdPipelineBarrier2(commandBuffer, &(VkDependencyInfo)
-                              {
-                                  .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                                  .imageMemoryBarrierCount = 1,
-                                  .pImageMemoryBarriers = &imageBarrier
-                              });
-    }
-
-    // Image copy
-    {
-        VkBufferImageCopy copyRegion =
-        {
-            .bufferOffset = stagingBuffer.Offset,
-            .bufferRowLength = 0,
-            .bufferImageHeight = 0,
-            .imageSubresource =
-            {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .mipLevel = 0,
-                .baseArrayLayer = 0,
-                .layerCount = desc.Texture->LayerCount > 0 ? desc.Texture->LayerCount : 1,
-            },
-            .imageOffset = { 0 },
-            .imageExtent =
-            {
-                .width = desc.Texture->Extent.width,
-                .height = desc.Texture->Extent.height,
-                .depth = 1,
-            },
-        };
-
-        vkCmdCopyBufferToImage(commandBuffer, stagingBuffer.Buffer, desc.Texture->Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
-    }
-
-    // Image barrier TRANSFER -> SHADER_READ_BIT
-    {
-        VkImageMemoryBarrier2 imageBarrier = ib_createTextureBarrier(core,
-                                                                     (ib_TextureBarrierDesc)
-                                                                     {
-                                                                         .Texture = desc.Texture,
-                                                                         .SourceAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-                                                                         .DestAccessMask = (VkAccessFlags) { 0 },
-                                                                         .OldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                                                         .NewLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                                                         .SourceStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                                                         .DestStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT
-                                                                     });
-        vkCmdPipelineBarrier2(commandBuffer, &(VkDependencyInfo)
-                              {
-                                  .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                                  .imageMemoryBarrierCount = 1,
-                                  .pImageMemoryBarriers = &imageBarrier
-                              });
-    }
-
-    ib_vkCheck(vkEndCommandBuffer(commandBuffer));
-
-    VkSubmitInfo2 submitInfo =
-    {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-        .commandBufferInfoCount = 1,
-        .pCommandBufferInfos = &(VkCommandBufferSubmitInfo)
-        {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-            .commandBuffer = commandBuffer
-        },
-        .signalSemaphoreInfoCount = 1,
-        .pSignalSemaphoreInfos = &(VkSemaphoreSubmitInfo)
-        {
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-            .semaphore = core->Staging.TimelineSemaphore,
-            .value = stagingBuffer.SemaphoreSignalValue,
-            .stageMask = VK_PIPELINE_STAGE_TRANSFER_BIT
-        }
-    };
-    ib_vkCheck(vkQueueSubmit2(core->Queues[ib_Queue_Transfer].Queue, 1, &submitInfo, VK_NULL_HANDLE));
 }
 
 VkImageMemoryBarrier2 ib_createTextureBarrier(ib_Core* core, ib_TextureBarrierDesc desc)
@@ -1413,18 +1151,6 @@ ib_Buffer ib_allocBuffer(ib_Core* core, ib_BufferDesc desc)
 
         buffer.DeviceAddress = vkGetBufferDeviceAddressKHR(core->LogicalDevice, &addressQueryInfo);
     }
-    
-    if (desc.InitialWrite.Data != NULL)
-    {
-        ib_assert(desc.InitialWrite.Size != 0);
-        ib_writeToBuffer(core, (ib_WriteToBufferDesc)
-                         {
-                             .Buffer = &buffer,
-                             .Data = desc.InitialWrite.Data,
-                             .Size = desc.InitialWrite.Size == VK_WHOLE_SIZE ? desc.Size : desc.InitialWrite.Size,
-                             .Alignment = desc.InitialWrite.Alignment,
-                         });
-    }
 
     return buffer;
 }
@@ -1433,60 +1159,6 @@ void ib_freeBuffer(ib_Core* core, ib_Buffer* buffer)
 {
     vkDestroyBuffer(core->LogicalDevice, buffer->VulkanBuffer, ib_NoVkAllocator);
     iba_gpuFree(&core->Allocator, &buffer->Allocation);
-}
-
-void ib_writeToBuffer(ib_Core* core, ib_WriteToBufferDesc desc)
-{
-    // Don't bother staging if we can just write to our memory directly.
-    if (desc.Buffer->Allocation.CPUMemory != NULL)
-    {
-        memcpy(desc.Buffer->Allocation.CPUMemory + desc.WriteOffset, desc.Data, desc.Size);
-    }
-    else
-    {
-        ib_StagingBuffer staging = ib_requestStagingBuffer(&core->Staging, (ib_StagingRequest) { desc.Size, desc.Alignment });
-        memcpy(staging.Memory, desc.Data, desc.Size);
-
-        ib_assert(core->Staging.ActiveCommandBuffers < MaxTransientStagingCommandBuffers);
-        VkCommandBuffer commandBuffer = core->Staging.TransientCommandBuffers[core->Staging.ActiveCommandBuffers++];
-        VkCommandBufferBeginInfo beginBufferInfo =
-        {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-        };
-        ib_vkCheck(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
-
-        VkBufferCopy copy =
-        {
-            .srcOffset = staging.Offset,
-            .dstOffset = desc.WriteOffset,
-            .size = desc.Size,
-        };
-        vkCmdCopyBuffer(commandBuffer, staging.Buffer, desc.Buffer->VulkanBuffer, 1, &copy);
-
-        ib_vkCheck(vkEndCommandBuffer(commandBuffer));
-
-        VkSubmitInfo2 submitInfo =
-        {
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-            .commandBufferInfoCount = 1,
-            .pCommandBufferInfos = &(VkCommandBufferSubmitInfo)
-            {
-                .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-                .commandBuffer = commandBuffer
-            },
-            .signalSemaphoreInfoCount = 1,
-            .pSignalSemaphoreInfos = &(VkSemaphoreSubmitInfo)
-            {
-                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-                .semaphore = core->Staging.TimelineSemaphore,
-                .value = staging.SemaphoreSignalValue,
-                .stageMask = VK_PIPELINE_STAGE_TRANSFER_BIT
-            }
-        };
-
-        ib_vkCheck(vkQueueSubmit2(core->Queues[ib_Queue_Transfer].Queue, 1, &submitInfo, VK_NULL_HANDLE));
-    }
 }
 
 // Surface

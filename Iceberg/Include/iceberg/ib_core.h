@@ -34,45 +34,6 @@ ib_TimelineSemaphore ib_allocTimelineSemaphore(ib_Core* core, uint64_t initialVa
 void ib_freeTimelineSemaphore(ib_Core* core, ib_TimelineSemaphore* semaphore);
 void ib_waitTimelineSemaphore(ib_Core* core, ib_TimelineSemaphore* semaphore);
 
-// Staging
-#define MaxTransientStagingCommandBuffers 256
-typedef struct
-{
-    VkDevice LogicalDevice;
-    iba_StackAllocator StackAllocator;
-
-    VkCommandPool TransferCommandPool;
-    VkCommandBuffer TransientCommandBuffers[MaxTransientStagingCommandBuffers];
-    uint32_t ActiveCommandBuffers;
-    VkSemaphore TimelineSemaphore;
-    uint64_t LastSemaphoreSignal;
-} ib_Staging;
-
-typedef struct
-{
-    VkBuffer Buffer;
-    void* Memory;
-    size_t Offset;
-    uint64_t SemaphoreSignalValue;
-} ib_StagingBuffer;
-
-typedef struct
-{
-    size_t Size;
-    size_t Alignment;
-} ib_StagingRequest;
-
-typedef struct
-{
-    VkDevice LogicalDevice;
-    uint32_t TransferQueueIndex;
-    iba_GpuAllocator* Allocator;
-} ib_StagingDesc;
-
-void ib_initStaging(ib_StagingDesc desc, ib_Staging* outStaging);
-void ib_killStaging(ib_Staging* staging);
-ib_StagingBuffer ib_requestStagingBuffer(ib_Staging* staging, ib_StagingRequest request);
-
 // Core API
 enum
 {
@@ -104,7 +65,6 @@ typedef struct
 
 void ib_initCore(ib_CoreDesc desc, ib_Core* outCore);
 void ib_killCore(ib_Core* core);
-void ib_flushStaging(ib_Core* core, ib_Staging* staging);
 
 // Command buffer
 typedef struct
@@ -161,20 +121,10 @@ typedef struct
     uint32_t LayerCount;
     char const* DebugName;
     VkImageLayout InitialLayout;
-    ib_WriteData InitialWrite;
 } ib_TextureDesc;
-
-typedef struct
-{
-    ib_Texture* Texture;
-    void const* Data;
-    size_t Size;
-    size_t Alignment;
-} ib_WriteToTextureDesc;
 
 ib_Texture ib_allocTexture(ib_Core* core, ib_TextureDesc desc);
 void ib_freeTexture(ib_Core* core, ib_Texture* texture);
-void ib_writeToTexture(ib_Core* core, ib_WriteToTextureDesc desc);
 
 uint32_t ib_formatToSize(VkFormat format);
 inline size_t ib_textureSize(ib_Texture const* texture, uint32_t mip)
@@ -218,21 +168,10 @@ typedef struct
     VkMemoryPropertyFlags PreferredMemoryFlags;
     char const* DebugName;
     iba_GpuAllocationType AllocationType;
-    ib_WriteData InitialWrite;
 } ib_BufferDesc;
-
-typedef struct
-{
-    ib_Buffer* Buffer;
-    void const* Data;
-    size_t Size;
-    size_t Alignment;
-    size_t WriteOffset;
-} ib_WriteToBufferDesc;
 
 ib_Buffer ib_allocBuffer(ib_Core* core, ib_BufferDesc desc);
 void ib_freeBuffer(ib_Core* core, ib_Buffer* buffer);
-void ib_writeToBuffer(ib_Core* core, ib_WriteToBufferDesc desc);
 
 // Surface
 typedef struct
@@ -523,7 +462,6 @@ typedef struct ib_Core
     VkPipelineCache PipelineCache;
 
     iba_GpuAllocator Allocator;
-    ib_Staging Staging;
 
     struct
     {
