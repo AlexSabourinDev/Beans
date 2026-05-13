@@ -443,29 +443,49 @@ bool ibr_beginFrame(ibr_RenderGraph* graph, ibr_BeginFrameDesc desc)
     // If we made it this far, we're good to go.
     ib_vkCheck(vkResetFences(graph->Core->LogicalDevice, 1, &graph->FrameFence));
 
+    // We don't get to leverage our transient allocator here
+    // Since our allocations live between our allocator reset boundary we need to go from one stack to the next.
+    // There's probably a better way to do this.
+#define maxScopeTimings 1024
+    ibr_TransientScopeTiming scopeTimings[maxScopeTimings];
+    uint32_t scopeTimingCount = 0;
+#undef maxScopeTimings
+
+    for (ibr_TransientProfileScope* iter = graph->CompletedScopes; iter != NULL; iter = iter->Next)
+    {
+        // Scope overflow
+        if (scopeTimingCount == ib_arrayCount(scopeTimings))
+        {
+            ib_assert(false);
+            break;
+        }
+
+        bool isBlocking = false;
+        ibr_ProfilingScope* scope = &iter->Scope;
+        ibr_TransientScopeTiming* transientTiming = &scopeTimings[scopeTimingCount++];
+        transientTiming->Timing = (ibr_ScopeTiming)
+        {
+            .Timing = ib_queryTimer(graph->Core, &graph->TimerManager, &scope->Timer, isBlocking),
+            .Name = scope->Name,
+        };
+        ib_assert(transientTiming->Timing.Timing != ib_TimerQueryNotReady); // We should be ready, our frame's fence was signaled.
+    }
+    list_clear(&graph->CompletedScopes);
+    list_clear(&graph->PreviousFrameTimings);
+
+    ib_resetTimersCPU(graph->Core, &graph->TimerManager);
+
     iba_stackReset(&graph->FrameCPUStack);
     // Our GPU memory is no longer in use by the previous frame. Reset for the current frame.
     iba_stackReset(&graph->FrameGPUStack);
 
-    // Convert our timers to timings from the previous frame
+    // Copy our data from the previous stack to the current stack.
+    for(uint32_t i = 0; i < scopeTimingCount; i++)
     {
-        list_clear(&graph->PreviousFrameTimings);
-        for (ibr_TransientProfileScope* iter = graph->CompletedScopes; iter != NULL; iter = iter->Next)
-        {
-            bool isBlocking = false;
-            ibr_ProfilingScope* scope = &iter->Scope;
-            ibr_TransientScopeTiming* transientTiming;
-            list_pushAlloc(transientTiming, ibr_TransientScopeTiming, &graph->PreviousFrameTimings);
-            transientTiming->Timing = (ibr_ScopeTiming)
-            {
-                .Timing = ib_queryTimer(graph->Core, &graph->TimerManager, &scope->Timer, isBlocking),
-                .Name = scope->Name,
-            };
-            ib_assert(transientTiming->Timing.Timing != ib_TimerQueryNotReady); // We should be ready, our frame's fence was signaled.
-        }
-        list_clear(&graph->CompletedScopes);
+        ibr_TransientScopeTiming* transientTiming;
+        list_pushAlloc(transientTiming, ibr_TransientScopeTiming, &graph->PreviousFrameTimings);
+        *transientTiming = scopeTimings[i];
     }
-    ib_resetTimersCPU(graph->Core, &graph->TimerManager);
 
     return true;
 }
@@ -1294,7 +1314,7 @@ void ibr_uploadDefaultResources(ibr_RenderGraph* graph, VkCommandBuffer commandB
         inStates[i] = ibr_textureState(&writeResources[i], ibr_TextureState_TransferDst, VK_PIPELINE_STAGE_2_COPY_BIT);
     }
 
-    ibr_beginTranserPass(graph, commandBuffer, (ibr_BeginTransferPassDesc)
+    ibr_beginTransferPass(graph, commandBuffer, (ibr_BeginTransferPassDesc)
                          {
                              .ResourceStates = ib_staticArrayRange(inStates),
                              .PassName = "Default Resource Upload"

@@ -404,12 +404,17 @@ static void update(void)
                                 NULL);
         vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, RasterizerCompute.VulkanPipeline);
         vkCmdDispatch(commands, cu_div_ceil(graph->ScreenExtent.width, 8u), cu_div_ceil(graph->ScreenExtent.height, 8u), 1u);
+        ibr_endComputePass(graph, commands);
 
-        ibr_barriers(graph, commands, (ibr_BarriersDesc)
-                     {
-                        ibr_textureState(&renderOutput, ibr_TextureState_TransferSrc, VK_PIPELINE_STAGE_TRANSFER_BIT),
-                        ibr_textureState(&swapchainResource, ibr_TextureState_TransferDst, VK_PIPELINE_STAGE_TRANSFER_BIT)
-                     });
+        ibr_beginTransferPass(graph, commands, (ibr_BeginTransferPassDesc)
+                             {
+                                 .ResourceStates =
+                                 {
+                                    ibr_textureState(&renderOutput, ibr_TextureState_TransferSrc, VK_PIPELINE_STAGE_TRANSFER_BIT),
+                                    ibr_textureState(&swapchainResource, ibr_TextureState_TransferDst, VK_PIPELINE_STAGE_TRANSFER_BIT)
+                                 },
+                                 .PassName = "CopyToSwapchain"
+                             });
 
         vkCmdCopyImage2(commands, &(VkCopyImageInfo2)
                         {
@@ -436,7 +441,8 @@ static void update(void)
                             }
                         });
 
-        ibr_endComputePass(graph, commands);
+        ibr_endTransferPass(graph, commands);
+
         ibr_barriers(graph, commands, (ibr_BarriersDesc)
                      {
                          ibr_textureToPresentState(&swapchainResource)

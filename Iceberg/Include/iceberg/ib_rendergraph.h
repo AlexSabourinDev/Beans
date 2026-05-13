@@ -327,7 +327,7 @@ typedef struct
 } ibr_BeginTransferPassDesc;
 
 // Cheating - Compute and transfer do the same.
-inline void ibr_beginTranserPass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_BeginTransferPassDesc desc)
+inline void ibr_beginTransferPass(ibr_RenderGraph* graph, VkCommandBuffer cmd, ibr_BeginTransferPassDesc desc)
 {
     ibr_beginComputePass(graph, cmd, (ibr_BeginComputePassDesc)
                          {
