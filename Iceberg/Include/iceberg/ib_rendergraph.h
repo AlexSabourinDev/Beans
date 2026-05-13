@@ -154,7 +154,11 @@ typedef struct
     ibr_ResourceFlags Flags;
     union
     {
-        ib_Texture* Texture;
+        struct
+        {
+            ib_Texture* Texture;
+            VkImageLayout TextureLayout;
+        };
         ib_TextureDesc TextureDesc;
         ib_Buffer* Buffer;
         ib_BufferDesc BufferDesc;
@@ -184,6 +188,8 @@ void ibr_allocPassResources(ibr_RenderGraph* graph, VkCommandBuffer commands, ib
 VkImageView ibr_allocTransientImageView(ibr_RenderGraph* graph, ibr_AllocTransientImageViewDesc desc);
 ib_ShaderInput ibr_allocTransientShaderInput(ibr_RenderGraph* graph, ib_AllocShaderInputDesc desc);
 VkCommandBuffer ibr_allocTransientCommandBuffer(ibr_RenderGraph* graph, ib_Queue queue);
+
+ibr_ResourceDesc ibr_textureResourceDesc(ib_Texture* texture, VkImageLayout layout);
 
 typedef struct
 {
@@ -353,6 +359,24 @@ enum
 
 typedef uint32_t ibr_BufferState;
 ibr_ResourceState ibr_bufferState(ibr_Resource* resource, ibr_BufferState state, VkPipelineStageFlags2 stage);
+
+enum
+{
+    ibr_DefaultTexture_White = 0,
+    ibr_DefaultTexture_Checkerboard = 1,
+    ibr_DefaultTexture_Count
+};
+
+// I don't love this API, but its a start. We'll revisit later.
+typedef struct
+{
+    ib_Texture Textures[ibr_DefaultTexture_Count];
+    bool Ready;
+} ibr_DefaultResources;
+
+void ibr_initDefaultResources(ib_Core* core, ibr_DefaultResources* resources);
+void ibr_uploadDefaultResources(ibr_RenderGraph* graph, VkCommandBuffer commandBuffer, ibr_DefaultResources* resources);
+void ibr_killDefaultResources(ib_Core* core, ibr_DefaultResources* resources);
 
 #ifdef _MSC_VER
 #pragma warning(pop)

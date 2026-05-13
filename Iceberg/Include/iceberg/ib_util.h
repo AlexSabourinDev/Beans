@@ -20,6 +20,13 @@ extern "C"
 #define ib_stringify(...) #__VA_ARGS__
 
 #define alignof __alignof
+#define typeof __typeof__
+
+#ifdef _MSC_VER
+// Annoyingly, MSVC doesn't define this
+// Based on cstddef
+typedef double max_align_t;
+#endif // _MSC_VER
 
 #ifdef IB_DEBUG
 

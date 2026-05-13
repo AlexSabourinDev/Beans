@@ -31,6 +31,7 @@ def compileShader(input, output, shaderType, entryPoint):
                     "-Wconversion",
                     "-all-resources-bound",
                     f"-Fo {output}",
+                    f"-I \"{scriptDir}/../../Iceberg/Shaders/\"",
                     input]
 
     compiledAssetPath = os.path.dirname(args.output)

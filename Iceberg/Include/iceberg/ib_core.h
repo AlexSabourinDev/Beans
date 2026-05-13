@@ -91,15 +91,10 @@ enum
     ib_Sampler_LinearClamp,
     ib_Sampler_CompareLess,
     ib_Sampler_NearestClamp,
+    ib_Sampler_NearestRepeat,
     ib_Sampler_Count
 };
 
-enum
-{
-    ib_DefaultTexture_White = 0,
-    ib_DefaultTexture_Count
-};
-	
 typedef struct
 {
     // Win32
@@ -538,7 +533,6 @@ typedef struct ib_Core
     } Queues[ib_Queue_Count];
 
     VkSampler Samplers[ib_Sampler_Count];
-    ib_Texture DefaultTextures[ib_DefaultTexture_Count];
 
     bool RaytracingEnabled;
 } ib_Core;

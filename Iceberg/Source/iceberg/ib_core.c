@@ -855,6 +855,17 @@ void ib_initCore(ib_CoreDesc desc, ib_Core* outCore)
                 .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                 .maxLod = VK_LOD_CLAMP_NONE
             },
+            [ib_Sampler_NearestRepeat] =
+            {
+                .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                .magFilter = VK_FILTER_NEAREST,
+                .minFilter = VK_FILTER_NEAREST,
+                .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                .maxLod = VK_LOD_CLAMP_NONE
+            },
         };
 
         // I don't want to create a sampler in every new system, just create common ones here
@@ -864,42 +875,10 @@ void ib_initCore(ib_CoreDesc desc, ib_Core* outCore)
             ib_vkCheck(vkCreateSampler(outCore->LogicalDevice, &createInfos[i], ib_NoVkAllocator, &outCore->Samplers[i]));
         }
     }
-
-    // Default textures
-    {
-        ib_TextureDesc textureDescs[] =
-        {
-            [ib_DefaultTexture_White] =
-            {
-                .Usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-                .Format = VK_FORMAT_R8G8B8A8_UNORM,
-                .Extent = { 1, 1 },
-                .Aspect = VK_IMAGE_ASPECT_COLOR_BIT,
-                .InitialWrite =
-                {
-                    .Data = (uint8_t[]) { 255, 255, 255, 255 },
-                    .Size = 4
-                },
-            }
-        };
-
-        // I don't want to create a sampler in every new system, just create common ones here
-        for (uint32_t i = 0; i < ib_DefaultTexture_Count; i++)
-        {
-            outCore->DefaultTextures[i] = ib_allocTexture(outCore, textureDescs[i]);
-        }
-
-        ib_flushStaging(outCore, &outCore->Staging); // Flush our new textures
-    }
 }
 
 void ib_killCore(ib_Core* core)
 {
-    for (uint32_t i = 0; i < ib_DefaultTexture_Count; i++)
-    {
-        ib_freeTexture(core, &core->DefaultTextures[i]);
-    }
-
     for (uint32_t i = 0; i < ib_Sampler_Count; i++)
     {
         vkDestroySampler(core->LogicalDevice, core->Samplers[i], ib_NoVkAllocator);

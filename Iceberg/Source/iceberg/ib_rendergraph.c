@@ -574,6 +574,7 @@ void ibr_allocPassResources(ibr_RenderGraph* graph, VkCommandBuffer commands, ib
             else
             {
                 outResource->Texture = resourceDesc.Texture;
+                outResource->TextureLayout = resourceDesc.TextureLayout;
             }
         }
         else if (resourceDesc.Type == ibr_ResourceType_Buffer)
@@ -594,6 +595,16 @@ void ibr_allocPassResources(ibr_RenderGraph* graph, VkCommandBuffer commands, ib
             }
         }
     }
+}
+
+ibr_ResourceDesc ibr_textureResourceDesc(ib_Texture* texture, VkImageLayout layout)
+{
+    return (ibr_ResourceDesc)
+    {
+        .Type = ibr_ResourceType_Texture,
+        .Texture = texture,
+        .TextureLayout = layout
+    };
 }
 
 void ibr_writeResources(ibr_RenderGraph* graph, VkCommandBuffer commands, ibr_WriteResourcesDesc desc)
@@ -1224,4 +1235,121 @@ ibr_ResourceState ibr_bufferState(ibr_Resource* resource, ibr_BufferState state,
 
     ib_assert(false); // Unexpected buffer state!
     return (ibr_ResourceState) { 0 };
+}
+
+void ibr_initDefaultResources(ib_Core* core, ibr_DefaultResources* resources)
+{
+    ib_TextureDesc textureDescs[] =
+    {
+        [ibr_DefaultTexture_White] = (ib_TextureDesc)
+        {
+            .Usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            .Format = VK_FORMAT_R8G8B8A8_UNORM,
+            .Extent = { 1, 1 },
+            .Aspect = VK_IMAGE_ASPECT_COLOR_BIT,
+        },
+        [ibr_DefaultTexture_Checkerboard] = (ib_TextureDesc)
+        {
+            .Usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            .Format = VK_FORMAT_R8G8B8A8_UNORM,
+            .Extent = { 2, 2 },
+            .Aspect = VK_IMAGE_ASPECT_COLOR_BIT,
+        }
+    };
+
+    static_assert(ib_arrayCount(textureDescs) == ibr_DefaultTexture_Count);
+
+    for (uint32_t i = 0; i < ibr_DefaultTexture_Count; i++)
+    {
+        resources->Textures[i] = ib_allocTexture(core, textureDescs[i]);
+    }
+}
+
+void ibr_uploadDefaultResources(ibr_RenderGraph* graph, VkCommandBuffer commandBuffer, ibr_DefaultResources* resources)
+{
+    ib_assert(!resources->Ready);
+    resources->Ready = true;
+
+    ibr_Resource writeResources[ibr_DefaultTexture_Count];
+    ibr_AllocResourceBinding resourceBindings[ibr_DefaultTexture_Count];
+    for (uint32_t i = 0; i < ibr_DefaultTexture_Count; i++)
+    {
+        resourceBindings[i] = (ibr_AllocResourceBinding)
+        {
+            .OutResource = &writeResources[i],
+            .Desc = ibr_textureResourceDesc(&resources->Textures[i], VK_IMAGE_LAYOUT_UNDEFINED)
+        };
+    }
+
+    ibr_allocPassResources(graph, commandBuffer, (ibr_AllocPassResourcesDesc)
+                    {
+                        ib_staticArrayRange(resourceBindings)
+                    });
+
+    ibr_ResourceState inStates[ibr_DefaultTexture_Count];
+    for (uint32_t i = 0; i < ibr_DefaultTexture_Count; i++)
+    {
+        inStates[i] = ibr_textureState(&writeResources[i], ibr_TextureState_TransferDst, VK_PIPELINE_STAGE_2_COPY_BIT);
+    }
+
+    ibr_beginTranserPass(graph, commandBuffer, (ibr_BeginTransferPassDesc)
+                         {
+                             .ResourceStates = ib_staticArrayRange(inStates),
+                             .PassName = "Default Resource Upload"
+                         });
+
+    ibr_WriteResourceDesc resourceWrites[] =
+    {
+        [ibr_DefaultTexture_White] =
+        {
+            &writeResources[ibr_DefaultTexture_White],
+            (ib_WriteData)
+            {
+                .Data = (uint8_t[]) { 255, 255, 255, 255 },
+                .Size = 4
+            }
+        },
+        [ibr_DefaultTexture_Checkerboard] =
+        {
+            &writeResources[ibr_DefaultTexture_Checkerboard],
+            (ib_WriteData)
+            {
+                .Data = (uint8_t[]) 
+                {
+                    255, 255, 255, 255, 0, 0, 0, 0,
+                    0, 0, 0, 0, 255, 255, 255, 255,
+                },
+                .Size = 16
+            }
+        }
+    };
+
+    static_assert(ib_arrayCount(resourceWrites) == ibr_DefaultTexture_Count);
+
+    ibr_writeResources(graph, commandBuffer, (ibr_WriteResourcesDesc)
+                       {
+                           ib_staticArrayRange(resourceWrites)
+                       });
+
+
+    // We don't know who will use this texture. Block access on all stages.
+    ibr_ResourceState outStates[ibr_DefaultTexture_Count];
+    for (uint32_t i = 0; i < ibr_DefaultTexture_Count; i++)
+    {
+        outStates[i] = ibr_textureState(&writeResources[i], ibr_TextureState_Read, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    }
+    ibr_barriers(graph, commandBuffer, (ibr_BarriersDesc)
+                 {
+                     ib_staticArrayRange(outStates)
+                 });
+
+    ibr_endTransferPass(graph, commandBuffer);
+}
+
+void ibr_killDefaultResources(ib_Core* core, ibr_DefaultResources* resources)
+{
+    for (uint32_t i = 0; i < ibr_DefaultTexture_Count; i++)
+    {
+        ib_freeTexture(core, &resources->Textures[i]);
+    }
 }

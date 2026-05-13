@@ -13,55 +13,6 @@
 
 iba_StackAllocator StackAllocator = { 0 };
 
-typedef struct
-{
-    uint32_t ItemCount;
-    uint32_t Capacity;
-} ib_DynArrHeader;
-
-typedef struct
-{
-    void*(*Alloc)(void* userData, size_t size, size_t alignment);
-    void(*Free)(void* userData, void* memory);
-    void* UserData;
-} ib_DynArrAllocator;
-
-static void ib_dynArrAddImpl(void** memory,
-    ib_DynArrHeader* header,
-    size_t elementSize,
-    size_t alignment,
-    const ib_DynArrAllocator* allocator)
-{
-    ib_assert((header->Capacity == 0 && *memory == NULL) || *memory != NULL);
-    header->ItemCount++;
-    if (header->ItemCount > header->Capacity)
-    {
-        uint32_t oldCapacity = header->Capacity;
-        header->Capacity = (oldCapacity == 0) ? 4 : oldCapacity * 2;
-        void* newMemory = allocator->Alloc(allocator->UserData, header->Capacity * elementSize, alignment);
-        if (oldCapacity > 0)
-        {
-            void* oldMemory = *memory;
-            memcpy(newMemory, oldMemory, oldCapacity * sizeof(elementSize));
-            allocator->Free(allocator->UserData, oldMemory);
-        }
-        *memory = newMemory;
-    }
-}
-
-#define ib_dynArr(Type) \
-    struct \
-    { \
-        ib_DynArrHeader Header; \
-        Type* Memory; \
-    }
-
-#define ib_dynArrAdd(arr, allocator) \
-    ( \
-        ib_dynArrAddImpl(&((arr)->Memory), &((arr)->Header), sizeof((arr)->Memory[0]), alignof(typeof((arr)->Memory[0])), allocator), \
-        &(arr)->Memory[(arr)->Header.ItemCount - 1] \
-    )
-
 static ib_Core Core;
 static ibr_RenderGraph Graphs[ib_FramebufferCount];
 static ib_Surface Surface;
@@ -71,30 +22,6 @@ static void* transientAlloc(size_t size, size_t alignment)
     iba_StackAllocation allocation = iba_stackAlloc(&StackAllocator, (iba_StackAllocationRequest){ size, alignment });
     return iba_cpuStackAllocToMemory(allocation);
 }
-
-static void* dynArrStackAlloc(void* userData, size_t size, size_t alignment)
-{
-    return transientAlloc(size, alignment);
-}
-
-static void dynArrStackFree(void* userData, void* memory)
-{
-    // Does nothing.
-}
-
-static const ib_DynArrAllocator DynArrStackAllocator =
-{
-    .Alloc = &dynArrStackAlloc,
-    .Free = &dynArrStackFree
-};
-
-typedef struct
-{
-    ib_Texture* Texture;
-    ib_WriteData Data;
-} TextureWrite;
-
-ib_dynArr(TextureWrite) TextureWrites;
 
 // Platform... stuff. I'd like to put this somewhere.
 // Maybe something line cranberry_platform
@@ -261,12 +188,16 @@ typedef struct
 enum
 {
     Rasterizer_Params = 0,
+    Rasterizer_Input,
+    Rasterizer_Samplers,
     Rasterizer_Output
 };
 
 ib_ShaderInputDesc const RasterizerInputs[] =
 {
     [Rasterizer_Params] = { .Index = Rasterizer_Params, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER },
+    [Rasterizer_Input] = { .Index = Rasterizer_Input, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE },
+    [Rasterizer_Samplers] = { .Index = Rasterizer_Samplers, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_SAMPLER, .UseImmutableSamplers = true },
     [Rasterizer_Output] = { .Index = Rasterizer_Output, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE }
 };
 
@@ -274,6 +205,7 @@ ib_ComputePipeline RasterizerCompute;
 
 Mesh SphereMesh;
 
+ibr_DefaultResources DefaultResources;
 static void init(void)
 {
     GetCurrentDirectoryA(ib_arrayCount(CurrentWorkingDirectory), CurrentWorkingDirectory);
@@ -336,7 +268,7 @@ static void init(void)
                                 }
                             });
 
-    TextureWrite* write = ib_dynArrAdd(&TextureWrites, &DynArrStackAllocator);
+    ibr_initDefaultResources(&Core, &DefaultResources);
 }
 
 static void kill(void)
@@ -345,6 +277,7 @@ static void kill(void)
     vkDeviceWaitIdle(Core.LogicalDevice);
     freeMesh(&SphereMesh);
     ib_freeComputePipeline(&Core, &RasterizerCompute);
+    ibr_killDefaultResources(&Core, &DefaultResources);
 
     iba_killTlsfAllocator(&GlobalBufferMemoryAllocator);
     ib_freeBuffer(&Core, &GlobalBufferMemory);
@@ -368,8 +301,17 @@ static void update(void)
         ib_beginCommandBuffer(&Core, commands);
         ibr_beginUpload(graph, commands);
 
+        // I don't like this API.
+        // Expecting the user to call Ready
+        // And then to upload the default resources is a hassle.
+        if (!DefaultResources.Ready)
+        {
+            ibr_uploadDefaultResources(graph, commands, &DefaultResources);
+        }
+
         ibr_Resource swapchainResource;
         ibr_Resource rasterizerParams;
+        ibr_Resource inputTexture;
         ibr_Resource renderOutput;
         ibr_allocPassResources(graph, commands, (ibr_AllocPassResourcesDesc)
                                {
@@ -378,11 +320,12 @@ static void update(void)
                                        (ibr_AllocResourceBinding)
                                        {
                                            .OutResource = &swapchainResource,
-                                           .Desc =
-                                           {
-                                               .Type = ibr_ResourceType_Texture,
-                                               .Texture = graph->SwapchainTexture,
-                                           }
+                                           .Desc = ibr_textureResourceDesc(graph->SwapchainTexture, VK_IMAGE_LAYOUT_UNDEFINED)
+                                       },
+                                       (ibr_AllocResourceBinding)
+                                       {
+                                           .OutResource = &inputTexture,
+                                           .Desc = ibr_textureResourceDesc(&DefaultResources.Textures[ibr_DefaultTexture_Checkerboard], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
                                        },
                                        (ibr_AllocResourceBinding)
                                        {
@@ -434,6 +377,7 @@ static void update(void)
                                   .ResourceStates =
                                   {
                                       ibr_textureState(&renderOutput, ibr_TextureState_ReadWrite, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+                                      ibr_textureState(&inputTexture, ibr_TextureState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
                                       ibr_bufferState(&rasterizerParams, ibr_BufferState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
                                   },
                                   .PassName = "Rasterizer"
@@ -446,6 +390,7 @@ static void update(void)
                                        .Resources = ib_staticArrayRange((ibr_Resource*[])
                                        {
                                            [Rasterizer_Params] = &rasterizerParams,
+                                           [Rasterizer_Input] = &inputTexture,
                                            [Rasterizer_Output] = &renderOutput
                                        })
                                    });
