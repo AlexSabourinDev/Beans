@@ -58,16 +58,37 @@ static void win32RunProcess(char* commandLine)
     }
 }
 
-static char InputFilePath[256];
-static char BackendScriptPath[256];
-static char CompilationParams[256];
+typedef struct
+{
+    bool Open;
+    FILETIME LastFileTime;
+    char* SourceFileData;
+    size_t SourceFileSize;
+    char* Disassembly;
+    size_t DisassemblySize;
+    char InputFilePath[256];
+    char BackendScriptPath[256];
+    char CompilationParams[256];
+    char* DisassemblyStats;
+    size_t DisassemblyStatsSize;
+    bool ShouldCompile;
+} CompilationContext;
+
+#define MaxCompilationContexts 8
+static CompilationContext Contexts[MaxCompilationContexts];
+static uint32_t ActiveContexts = 0;
+static uint32_t CurrentContext = 0;
 
 static void saveConfig()
 {
     FILE* config = fopen("config.txt", "w");
-    fprintf(config, "%s\n", InputFilePath);
-    fprintf(config, "%s\n", BackendScriptPath);
-    fprintf(config, "%s\n", CompilationParams);
+    fprintf(config, "%u\n", ActiveContexts);
+    for (uint32_t i = 0; i < ActiveContexts; i++)
+    {
+        fprintf(config, "%s\n", Contexts[i].InputFilePath);
+        fprintf(config, "%s\n", Contexts[i].BackendScriptPath);
+        fprintf(config, "%s\n", Contexts[i].CompilationParams);
+    }
     fclose(config);
 }
 
@@ -87,9 +108,13 @@ static void loadConfig()
     FILE* config = fopen("config.txt", "r");
     if (config != NULL)
     {
-        getStringNoNewline(InputFilePath, ib_arrayCount(InputFilePath), config);
-        getStringNoNewline(BackendScriptPath, ib_arrayCount(BackendScriptPath), config);
-        getStringNoNewline(CompilationParams, ib_arrayCount(CompilationParams), config);
+        fscanf(config, "%u\n", &ActiveContexts);
+        for (uint32_t i = 0; i < ActiveContexts; i++)
+        {
+            getStringNoNewline(Contexts[i].InputFilePath, ib_arrayCount(Contexts[i].InputFilePath), config);
+            getStringNoNewline(Contexts[i].BackendScriptPath, ib_arrayCount(Contexts[i].BackendScriptPath), config);
+            getStringNoNewline(Contexts[i].CompilationParams, ib_arrayCount(Contexts[i].CompilationParams), config);
+        }
         fclose(config);
     }
 }
@@ -124,38 +149,24 @@ static ib_Core Core;
 static ibr_RenderGraph Graphs[ib_FramebufferCount];
 static ib_Surface Surface;
 
-static char* DisassemblyStats = NULL;
-static size_t DisassemblyStatsSize = 0;
-
-static char* Disassembly = NULL;
-static size_t DisassemblySize = 0;
-
 static char const* OutputFileName = "temp/compilation_output.txt";
 static char const* StatsFileName = "temp/stats.txt";
 static char const* LogFileName = "temp/log.txt";
-
-static char* SourceFileData = NULL;
-static size_t SourceFileSize = 0;
 
 static bool RecompileOnFileChange = false;
 static bool FileModified = false;
 
 static void init(void)
 {
-    if (!readWholeFile(StatsFileName, &DisassemblyStats, &DisassemblyStatsSize))
+    for (uint32_t i = 0; i < MaxCompilationContexts; i++)
     {
-        DisassemblyStats = calloc(1, 1);
-        DisassemblyStatsSize = 1;
+        Contexts[i].DisassemblyStats = calloc(1, 1);
+        Contexts[i].DisassemblyStatsSize = 1;
+        Contexts[i].Disassembly = calloc(1, 1);
+        Contexts[i].DisassemblySize = 1;
+        Contexts[i].SourceFileData = calloc(1, 1);
+        Contexts[i].SourceFileSize = 1;
     }
-
-    if (!readWholeFile(OutputFileName, &Disassembly, &DisassemblySize))
-    {
-        Disassembly = calloc(1, 1);
-        DisassemblySize = 1;
-    }
-
-    SourceFileData = calloc(1, 1);
-    SourceFileSize = 1;
 
     CreateDirectoryA("temp", NULL);
     LogOutputHandle = fopen(LogFileName, "w+");
@@ -182,9 +193,12 @@ static void init(void)
 
 static void kill(void)
 {
-    free(DisassemblyStats);
-    free(Disassembly);
-    free(SourceFileData);
+    for (uint32_t i = 0; i < MaxCompilationContexts; i++)
+    {
+        free(Contexts[i].DisassemblyStats);
+        free(Contexts[i].Disassembly);
+        free(Contexts[i].SourceFileData);
+    }
 
     saveConfig();
     fclose(LogOutputHandle);
@@ -197,15 +211,13 @@ static void kill(void)
     ib_killCore(&Core);
 }
 
-static bool ShouldCompile = false;
-
 static int sourceFileResize(ImGuiInputTextCallbackData* data)
 {
     if (data->EventFlag == ImGuiInputTextFlags_CallbackResize)
     {
-        SourceFileData = realloc(SourceFileData, data->BufSize);
-        SourceFileSize = data->BufSize;
-        data->Buf = SourceFileData;
+        Contexts[CurrentContext].SourceFileData = realloc(Contexts[CurrentContext].SourceFileData, data->BufSize);
+        Contexts[CurrentContext].SourceFileSize = data->BufSize;
+        data->Buf = Contexts[CurrentContext].SourceFileData;
     }
     return 0;
 }
@@ -219,108 +231,129 @@ static void update(void)
     igSetNextWindowPos((ImVec2_c){0}, ImGuiCond_None, (ImVec2_c){0});
     if (igBegin("Main Window", NULL, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize))
     {
-        static FILETIME lastFileTime = { 0 };
-
-        bool fileTimeChanged = false;
-
-        WIN32_FILE_ATTRIBUTE_DATA fileAttributes;
-        if (GetFileAttributesExA(InputFilePath, GetFileExInfoStandard, &fileAttributes) == TRUE)
+        if (igBeginTabBar("CompilationTabs", ImGuiTabBarFlags_None))
         {
-            fileTimeChanged = memcmp(&fileAttributes.ftLastWriteTime, &lastFileTime, sizeof(FILETIME)) != 0;
-            lastFileTime = fileAttributes.ftLastWriteTime;
-        }
-
-        ShouldCompile |= (RecompileOnFileChange && fileTimeChanged);
-
-        igBeginTable("Table0", 2, ImGuiTableFlags_Resizable, (ImVec2_c) { 0 }, 0.0f);
-        {
-            igTableNextColumn();
-
+            for (uint32_t i = 0; i < ActiveContexts; i++)
             {
-                igBeginTable("ParamTable", 2, ImGuiTableFlags_None, (ImVec2_c) { 0.0f, 0.0f }, 0.0f);
+                char contextName[] = "Context 0";
+                // Bit of a hack, 9th character is 0, make it match our active context count.
+                contextName[8] += i;
+                if (igBeginTabItem(contextName, NULL, ImGuiTabItemFlags_None))
                 {
-                    igTableSetupColumn("Inputs", ImGuiTableColumnFlags_WidthStretch, 0.0f, 0);
-                    igTableSetupColumn("Labels", ImGuiTableColumnFlags_WidthFixed, 0.0f, 0);
+                    CurrentContext = i;
 
-                    igTableNextColumn();
-                    igInputTextEx("##Source File", NULL, InputFilePath, ib_arrayCount(InputFilePath), (ImVec2_c) { -1.0f, 0.0f }, ImGuiInputTextFlags_None, NULL, NULL);
-                    igTableNextColumn();
-                    igText("Source File");
+                    bool fileTimeChanged = false;
 
-                    igTableNextColumn();
-                    igInputTextEx("##Backend Script", NULL, BackendScriptPath, ib_arrayCount(BackendScriptPath), (ImVec2_c) { -1.0f, 0.0f }, ImGuiInputTextFlags_None, NULL, NULL);
-                    igTableNextColumn();
-                    igText("Backend Script");
+                    CompilationContext* ctx = &Contexts[i];
 
-                    igTableNextColumn();
-                    igInputTextEx("##Params", NULL, CompilationParams, ib_arrayCount(CompilationParams), (ImVec2_c) { -1.0f, 0.0f }, ImGuiInputTextFlags_None, NULL, NULL);
-                    igTableNextColumn();
-                    igText("Params");
+                    WIN32_FILE_ATTRIBUTE_DATA fileAttributes;
+                    if (GetFileAttributesExA(ctx->InputFilePath, GetFileExInfoStandard, &fileAttributes) == TRUE)
+                    {
+                        fileTimeChanged = memcmp(&fileAttributes.ftLastWriteTime, &ctx->LastFileTime, sizeof(FILETIME)) != 0;
+                        ctx->LastFileTime = fileAttributes.ftLastWriteTime;
+                    }
+
+                    ctx->ShouldCompile |= (RecompileOnFileChange && fileTimeChanged);
+
+                    igBeginTable("Table0", 2, ImGuiTableFlags_Resizable, (ImVec2_c) { 0 }, 0.0f);
+                    {
+                        igTableNextColumn();
+
+                        {
+                            igBeginTable("ParamTable", 2, ImGuiTableFlags_None, (ImVec2_c) { 0.0f, 0.0f }, 0.0f);
+                            {
+                                igTableSetupColumn("Inputs", ImGuiTableColumnFlags_WidthStretch, 0.0f, 0);
+                                igTableSetupColumn("Labels", ImGuiTableColumnFlags_WidthFixed, 0.0f, 0);
+
+                                igTableNextColumn();
+                                igInputTextEx("##Source File", NULL, ctx->InputFilePath, ib_arrayCount(ctx->InputFilePath), (ImVec2_c) { -1.0f, 0.0f }, ImGuiInputTextFlags_None, NULL, NULL);
+                                igTableNextColumn();
+                                igText("Source File");
+
+                                igTableNextColumn();
+                                igInputTextEx("##Backend Script", NULL, ctx->BackendScriptPath, ib_arrayCount(ctx->BackendScriptPath), (ImVec2_c) { -1.0f, 0.0f }, ImGuiInputTextFlags_None, NULL, NULL);
+                                igTableNextColumn();
+                                igText("Backend Script");
+
+                                igTableNextColumn();
+                                igInputTextEx("##Params", NULL, ctx->CompilationParams, ib_arrayCount(ctx->CompilationParams), (ImVec2_c) { -1.0f, 0.0f }, ImGuiInputTextFlags_None, NULL, NULL);
+                                igTableNextColumn();
+                                igText("Params");
+                            }
+                            igEndTable();
+
+                            ctx->ShouldCompile |= igButton("Compile", (ImVec2_c) { 0 });
+
+                            if (ctx->ShouldCompile)
+                            {
+                                char systemCommand[1024];
+                                snprintf(systemCommand, ib_arrayCount(systemCommand), "py \"%s\" -i \"%s\" -s \"%s\" -o=\"%s\" %s",
+                                         ctx->BackendScriptPath, ctx->InputFilePath, StatsFileName, OutputFileName, ctx->CompilationParams);
+
+                                win32RunProcess(systemCommand);
+
+                                readWholeFile(StatsFileName, &ctx->DisassemblyStats, &ctx->DisassemblyStatsSize);
+                                readWholeFile(OutputFileName, &ctx->Disassembly, &ctx->DisassemblySize);
+
+                                char* logFile = NULL;
+                                size_t logFileSize = 0;
+                                readWholeFileFromHandle(LogOutputHandle, &logFile, &logFileSize);
+                                printf("%s\n", logFile);
+                                free(logFile);
+
+                                ctx->ShouldCompile = false;
+                            }
+
+                            igSameLine(0.0f, -1.0f);
+                            igCheckbox("Recompile On File Change", &RecompileOnFileChange);
+                        }
+
+                        igTableNextColumn();
+
+                        {
+                            igText("Stats");
+                            igInputTextMultiline("##Stats", ctx->DisassemblyStats, ctx->DisassemblyStatsSize, (ImVec2_c) { -1.0f, 0.0f }, ImGuiInputTextFlags_ReadOnly, (ImGuiInputTextCallback) { 0 }, NULL);
+                        }
+                    }
+                    igEndTable();
+
+                    igBeginTable("Table1", 2, ImGuiTableFlags_BordersOuter | ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable, (ImVec2_c) { 0.0f, -1.0f }, 0.0f);
+                    {
+                        igTableSetupColumn(FileModified ? "Source*" : "Source", ImGuiTableColumnFlags_WidthStretch, 0.0f, 0);
+                        igTableSetupColumn("Disassembly", ImGuiTableColumnFlags_WidthStretch, 0.0f, 0);
+                        igTableHeadersRow();
+
+                        igTableNextColumn();
+
+                        {
+                            static char viewedPath[256];
+
+                            if (memcmp(viewedPath, ctx->InputFilePath, ib_arrayCount(ctx->InputFilePath)) != 0 || fileTimeChanged)
+                            {
+                                memcpy(viewedPath, ctx->InputFilePath, ib_arrayCount(ctx->InputFilePath));
+                                readWholeFile(viewedPath, &ctx->SourceFileData, &ctx->SourceFileSize);
+                            }
+
+                            FileModified |= igInputTextMultiline("##SourceFile", ctx->SourceFileData, ctx->SourceFileSize, (ImVec2_c) { -1.0f, -1.0f }, ImGuiInputTextFlags_CallbackResize, &sourceFileResize, NULL);
+                        }
+
+                        igTableNextColumn();
+
+                        {
+                            igInputTextMultiline("##DisassemblyFile", ctx->Disassembly, ctx->DisassemblySize, (ImVec2_c) { -1.0f, -1.0f }, ImGuiInputTextFlags_ReadOnly, (ImGuiInputTextCallback) { 0 }, NULL);
+                        }
+                    }
+                    igEndTable();
+                    igEndTabItem();
                 }
-                igEndTable();
-
-                ShouldCompile |= igButton("Compile", (ImVec2_c) { 0 });
-
-                if (ShouldCompile)
-                {
-                    char systemCommand[1024];
-                    snprintf(systemCommand, ib_arrayCount(systemCommand), "py \"%s\" -i \"%s\" -s \"%s\" -o=\"%s\" %s",
-                             BackendScriptPath, InputFilePath, StatsFileName, OutputFileName, CompilationParams);
-
-                    win32RunProcess(systemCommand);
-
-                    readWholeFile(StatsFileName, &DisassemblyStats, &DisassemblyStatsSize);
-                    readWholeFile(OutputFileName, &Disassembly, &DisassemblySize);
-
-                    char* logFile = NULL;
-                    size_t logFileSize = 0;
-                    readWholeFileFromHandle(LogOutputHandle, &logFile, &logFileSize);
-                    printf("%s\n", logFile);
-                    free(logFile);
-
-                    ShouldCompile = false;
-                }
-
-                igSameLine(0.0f, -1.0f);
-                igCheckbox("Recompile On File Change", &RecompileOnFileChange);
             }
 
-            igTableNextColumn();
-
+            if (igTabItemButton("+", ImGuiTabItemFlags_Button))
             {
-                igText("Stats");
-                igInputTextMultiline("##Stats", DisassemblyStats, DisassemblyStatsSize, (ImVec2_c) { -1.0f, 0.0f }, ImGuiInputTextFlags_ReadOnly, (ImGuiInputTextCallback) { 0 }, NULL);
+                ActiveContexts = ActiveContexts < MaxCompilationContexts ? (ActiveContexts+1) : MaxCompilationContexts;
             }
+            igEndTabBar();
         }
-        igEndTable();
-
-        igBeginTable("Table1", 2, ImGuiTableFlags_BordersOuter | ImGuiTableFlags_Resizable | ImGuiTableFlags_Hideable, (ImVec2_c) { 0.0f, -1.0f }, 0.0f);
-        {
-            igTableSetupColumn(FileModified ? "Source*" : "Source", ImGuiTableColumnFlags_WidthStretch, 0.0f, 0);
-            igTableSetupColumn("Disassembly", ImGuiTableColumnFlags_WidthStretch, 0.0f, 0);
-            igTableHeadersRow();
-
-            igTableNextColumn();
-
-            {
-                static char viewedPath[256];
-
-                if (memcmp(viewedPath, InputFilePath, ib_arrayCount(InputFilePath)) != 0 || fileTimeChanged)
-                {
-                    memcpy(viewedPath, InputFilePath, ib_arrayCount(InputFilePath));
-                    readWholeFile(viewedPath, &SourceFileData, &SourceFileSize);
-                }
-
-                FileModified |= igInputTextMultiline("##SourceFile", SourceFileData, SourceFileSize, (ImVec2_c) { -1.0f, -1.0f }, ImGuiInputTextFlags_CallbackResize, &sourceFileResize, NULL);
-            }
-
-            igTableNextColumn();
-
-            {
-                igInputTextMultiline("##DisassemblyFile", Disassembly, DisassemblySize, (ImVec2_c) { -1.0f, -1.0f }, ImGuiInputTextFlags_ReadOnly, (ImGuiInputTextCallback) { 0 }, NULL);
-            }
-        }
-        igEndTable();
     }
     igEnd();
 
@@ -401,19 +434,19 @@ static void events(sapp_event const* event)
     {
         if (event->key_code == SAPP_KEYCODE_C && event->modifiers == (SAPP_MODIFIER_SHIFT | SAPP_MODIFIER_CTRL))
         {
-            ShouldCompile = true;
+            Contexts[CurrentContext].ShouldCompile = true;
         }
         else if (event->key_code == SAPP_KEYCODE_S && event->modifiers == SAPP_MODIFIER_CTRL)
         {
-            FILE* sourceFile = fopen(InputFilePath, "wb");
+            FILE* sourceFile = fopen(Contexts[CurrentContext].InputFilePath, "wb");
             if (sourceFile != NULL)
             {
-                fprintf(sourceFile, "%s", SourceFileData);
+                fprintf(sourceFile, "%s", Contexts[CurrentContext].SourceFileData);
                 fclose(sourceFile);
 
                 if (RecompileOnFileChange)
                 {
-                    ShouldCompile = true;
+                    Contexts[CurrentContext].ShouldCompile = true;
                 }
 
                 FileModified = false;
