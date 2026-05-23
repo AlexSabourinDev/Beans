@@ -94,5 +94,7 @@ void CS(uint2 aDispatchThreadId : SV_DispatchThreadId)
             output.xyz += p;
         }
     }
-    Output[aDispatchThreadId] = output;
+
+    float2 uv = ((float2)aDispatchThreadId + 0.5) / (float2)Params.OutputDimensions;
+    Output[aDispatchThreadId] = Input.SampleLevel(Samplers[ib_Sampler_NearestRepeat], uv * 32, 0.0f);
 }

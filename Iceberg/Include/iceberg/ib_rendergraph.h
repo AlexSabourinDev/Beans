@@ -382,11 +382,9 @@ enum
 typedef struct
 {
     ib_Texture Textures[ibr_DefaultTexture_Count];
-    bool Ready;
 } ibr_DefaultResources;
 
-void ibr_initDefaultResources(ib_Core* core, ibr_DefaultResources* resources);
-void ibr_uploadDefaultResources(ibr_RenderGraph* graph, VkCommandBuffer commandBuffer, ibr_DefaultResources* resources);
+void ibr_initDefaultResources(ibr_RenderGraph* graph, VkCommandBuffer commandBuffer, ibr_DefaultResources* resources);
 void ibr_killDefaultResources(ib_Core* core, ibr_DefaultResources* resources);
 
 #ifdef _MSC_VER

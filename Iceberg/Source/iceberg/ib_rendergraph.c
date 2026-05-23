@@ -1257,7 +1257,7 @@ ibr_ResourceState ibr_bufferState(ibr_Resource* resource, ibr_BufferState state,
     return (ibr_ResourceState) { 0 };
 }
 
-void ibr_initDefaultResources(ib_Core* core, ibr_DefaultResources* resources)
+void ibr_initDefaultResources(ibr_RenderGraph* graph, VkCommandBuffer commandBuffer, ibr_DefaultResources* resources)
 {
     ib_TextureDesc textureDescs[] =
     {
@@ -1283,14 +1283,8 @@ void ibr_initDefaultResources(ib_Core* core, ibr_DefaultResources* resources)
 
     for (uint32_t i = 0; i < ibr_DefaultTexture_Count; i++)
     {
-        resources->Textures[i] = ib_allocTexture(core, textureDescs[i]);
+        resources->Textures[i] = ib_allocTexture(graph->Core, textureDescs[i]);
     }
-}
-
-void ibr_uploadDefaultResources(ibr_RenderGraph* graph, VkCommandBuffer commandBuffer, ibr_DefaultResources* resources)
-{
-    ib_assert(!resources->Ready);
-    resources->Ready = true;
 
     ibr_Resource writeResources[ibr_DefaultTexture_Count];
     ibr_AllocResourceBinding resourceBindings[ibr_DefaultTexture_Count];

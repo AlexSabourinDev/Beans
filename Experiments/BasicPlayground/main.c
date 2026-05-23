@@ -205,6 +205,20 @@ ib_ComputePipeline RasterizerCompute;
 
 Mesh SphereMesh;
 
+ibr_RenderGraph* beginRenderGraph(ib_Surface* surface)
+{
+    static uint32_t activeFrame = 0;
+    ibr_RenderGraph* graph = &Graphs[activeFrame]; 
+    bool frameBegun = ibr_beginFrame(graph, (ibr_BeginFrameDesc)
+                   {
+                       .FrameIndex = activeFrame,
+                       .Surface = surface
+                   });
+
+    activeFrame = (activeFrame + 1) % ib_FramebufferCount;
+    return frameBegun ? graph : NULL;
+}
+
 ibr_DefaultResources DefaultResources;
 static void init(void)
 {
@@ -268,7 +282,28 @@ static void init(void)
                                 }
                             });
 
-    ibr_initDefaultResources(&Core, &DefaultResources);
+    // Spin up a graph for GPU-side initialization
+    ibr_RenderGraph* graph = beginRenderGraph(NULL);
+    if (graph != NULL)
+    {
+        VkCommandBuffer commands = ibr_allocTransientCommandBuffer(graph, ib_Queue_Graphics);
+        ib_beginCommandBuffer(&Core, commands);
+        ibr_beginUpload(graph, commands);
+
+        ibr_initDefaultResources(graph, commands, &DefaultResources);
+
+        ib_vkCheck(vkEndCommandBuffer(commands));
+
+        ibr_submitCommandBuffers(graph, (ibr_SubmitCommandBufferDesc)
+                                 {
+                                     .Queue = ib_Queue_Graphics,
+                                     .CommandBuffers = commands,
+                                     .SubmitFence = graph->FrameFence
+                                 });
+
+        ibr_endUpload(graph);
+        ibr_endFrame(graph);
+    }
 }
 
 static void kill(void)
@@ -288,26 +323,12 @@ static void kill(void)
 
 static void update(void)
 {
-    static uint32_t ActiveFrame = 0;
-    ibr_RenderGraph* graph = &Graphs[ActiveFrame]; 
-    bool frameBegun = ibr_beginFrame(graph, (ibr_BeginFrameDesc)
-                   {
-                       .FrameIndex = ActiveFrame,
-                       .Surface = &Surface
-                   });
-    if (frameBegun)
+    ibr_RenderGraph* graph = beginRenderGraph(&Surface); 
+    if (graph != NULL)
     {
         VkCommandBuffer commands = ibr_allocTransientCommandBuffer(graph, ib_Queue_Graphics);
         ib_beginCommandBuffer(&Core, commands);
         ibr_beginUpload(graph, commands);
-
-        // I don't like this API.
-        // Expecting the user to call Ready
-        // And then to upload the default resources is a hassle.
-        if (!DefaultResources.Ready)
-        {
-            ibr_uploadDefaultResources(graph, commands, &DefaultResources);
-        }
 
         ibr_Resource swapchainResource;
         ibr_Resource rasterizerParams;
@@ -463,8 +484,6 @@ static void update(void)
         ibr_endUpload(graph);
         ibr_endFrame(graph);
     }
-
-    ActiveFrame = (ActiveFrame + 1) % ib_FramebufferCount;
 
     // Reset at the end of the frame,
     // this allows init to use the stack allocator as well

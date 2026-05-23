@@ -510,6 +510,7 @@ void ib_initCore(ib_CoreDesc desc, ib_Core* outCore)
             .multiDrawIndirect = VK_TRUE,
             .drawIndirectFirstInstance = VK_TRUE,
             .shaderInt64 = VK_TRUE,
+            .shaderInt16 = VK_TRUE,
             .dualSrcBlend = VK_TRUE
         };
 
