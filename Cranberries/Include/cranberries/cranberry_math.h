@@ -252,6 +252,8 @@ cran_forceinline cv2 cv2_rcp(cv2 v);
 cran_forceinline cv2 cv2_madf(cv2 v, float m, float a);
 cran_forceinline ch2 cv2_f32_to_f16(cv2 f32);
 cran_forceinline cv2 cv2_f16_to_f32(ch2 f16);
+cran_forceinline cv2 cv2_min(cv2 l, cv2 r);
+cran_forceinline cv2 cv2_max(cv2 l, cv2 r);
 
 cran_forceinline cv2 cu2_to_cv2(cu2 v);
 
@@ -337,6 +339,7 @@ cran_forceinline cm3 cm3_inverse_orthonormal(cm3 m);
 cran_forceinline cm4 cm3x4_to_cm4(cm3x4 m);
 
 cran_forceinline cm4 cm4_rotate_xy(float theta);
+cran_forceinline cm4 cm4_rotate_xz(float theta);
 cran_forceinline cm4 cm4_translate(cv3 pos);
 cran_forceinline cm4 cm4_mul(cm4 l, cm4 r);
 cran_forceinline cm4 cm4_perspective_projection(float fov, float nearPlane, float farPlane, float aspectRatio);
@@ -688,6 +691,16 @@ cran_forceinline cv2 cv2_madf(cv2 v, float m, float a)
 		cf_mad(v.x, m, a),
 		cf_mad(v.y, m, a)
 	};
+}
+
+cran_forceinline cv2 cv2_min(cv2 l, cv2 r)
+{
+    return (cv2) { fminf(l.x, r.x), fminf(l.y, r.y) };
+}
+
+cran_forceinline cv2 cv2_max(cv2 l, cv2 r)
+{
+    return (cv2) { fmaxf(l.x, r.x), fmaxf(l.y, r.y) };
 }
 
 cran_forceinline ch2 cv2_f32_to_f16(cv2 f32)
@@ -1152,6 +1165,17 @@ cran_forceinline cm4 cm4_rotate_xy(float theta)
 		cosf(theta), -sinf(theta), 0.0f, 0.0f,
 		sinf(theta), cosf(theta), 0.0f, 0.0f,
 		0.0f, 0.0f, 1.0f, 0.0f,
+		0.0f, 0.0f, 0.0f, 1.0f
+	};
+}
+
+cran_forceinline cm4 cm4_rotate_xz(float theta)
+{
+	return (cm4)
+	{
+		cosf(theta), 0.0f, -sinf(theta), 0.0f,
+		0.0f, 1.0f, 0.0f, 0.0f,
+		sinf(theta), 0.0f, cosf(theta), 0.0f,
 		0.0f, 0.0f, 0.0f, 1.0f
 	};
 }

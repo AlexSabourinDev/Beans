@@ -1,6 +1,7 @@
 #define SOKOL_IMPL
 #define SOKOL_NOAPI
 #include <sokol/sokol_app.h>
+#include <sokol/sokol_time.h>
 
 #include <cranberries/cranberry_math.h>
 
@@ -11,7 +12,10 @@
 #include <stdio.h>
 #include <stddef.h>
 
-iba_StackAllocator StackAllocator = { 0 };
+static bool PauseTime = false;
+
+
+static iba_StackAllocator StackAllocator = { 0 };
 
 static ib_Core Core;
 static ibr_RenderGraph Graphs[ib_FramebufferCount];
@@ -56,9 +60,9 @@ typedef struct
     uint16_t* Indices;
     c16i3* Positions;
     c16i2* Normals;
+    cv2* UVs;
     uint32_t IndexCount;
-    uint32_t PositionCount;
-    uint32_t NormalCount;
+    uint32_t VertexCount;
 } MeshDesc;
 
 static size_t const GlobalBufferMemorySize = 1024u * 1024u * 32u; // 32 MB of global buffer memory.
@@ -66,22 +70,23 @@ static ib_Buffer GlobalBufferMemory;
 static iba_TlsfAllocator GlobalBufferMemoryAllocator;
 
 // Quantization: https://cbloomrants.blogspot.com/2020/09/topics-in-quantization-for-games.html
-static float const PosFixedPointScale = 128.0f;
 static c16i3 packPosition(cv3 pos)
 {
+    float const posFixedPointScale = exp2f(7.0f);
     // Rescale such that position is fixed point 8.7
-    // As a result, 1 is 1/256 and 256 is 1
-    pos = cv3_mulf(pos, PosFixedPointScale);
+    // As a result, 1 is 1/128 and 128 is 1
+    pos = cv3_mulf(pos, posFixedPointScale);
     return cv3_to_c16i3(pos);
 }
 
-static float const NormalFixedPointScale = 32768.0f;
 static c16i2 packNormal(cv3 normal)
 {
-    // Rescale such that position is fixed point 16.16
-    // As a result, 1 is 1/256 and 256 is 1
+    float const normalFixedPointScale = exp2f(15.0f);
+    // Rescale such that normal is fixed point 1.15
     cv2 octahedral = cv3_to_octahedral(normal);
-    octahedral = cv2_mulf(octahedral, NormalFixedPointScale);
+    ib_assert(octahedral.x >= 0.0f && octahedral.y >= 0.0f);
+    ib_assert(octahedral.x <= 1.0f && octahedral.y <= 1.0f);
+    octahedral = cv2_mulf(octahedral, normalFixedPointScale);
     return cv2_to_c16i2(octahedral);
 }
 
@@ -89,52 +94,68 @@ static MeshDesc createSphereMesh(uint32_t latitudeSegments, uint32_t longitudeSe
 {
     MeshDesc mesh = {0};
     uint32_t segmentQuadCount = latitudeSegments * longitudeSegments;
-    uint32_t segmentIndexCount = segmentQuadCount * 6;
-    uint32_t segmentVertexCount = segmentQuadCount * 4;
+    uint32_t segmentIndexCount = segmentQuadCount * 6u;
+
+    uint32_t latitudeVertexCount = latitudeSegments + 1u;
+    uint32_t longitudeVertexCount = longitudeSegments + 1u;
+    uint32_t vertexCount = latitudeVertexCount * longitudeVertexCount;
 
     mesh.Indices = (uint16_t*)transientAlloc(segmentIndexCount * sizeof(uint16_t), alignof(uint16_t));
-    mesh.Positions = (c16i3*)transientAlloc(segmentVertexCount * sizeof(c16i3), alignof(c16i3));
-    mesh.Normals = (c16i2*)transientAlloc(segmentVertexCount * sizeof(c16i2), alignof(c16i2));
+    mesh.Positions = (c16i3*)transientAlloc(vertexCount * sizeof(c16i3), alignof(c16i3));
+    mesh.Normals = (c16i2*)transientAlloc(vertexCount * sizeof(c16i2), alignof(c16i2));
+    mesh.UVs = (cv2*)transientAlloc(vertexCount * sizeof(cv2), alignof(cv2));
     mesh.IndexCount = segmentIndexCount;
-    mesh.PositionCount = segmentVertexCount;
-    mesh.NormalCount = segmentVertexCount;
+    mesh.VertexCount = vertexCount;
 
     uint32_t indexWriter = 0;
     uint32_t vertexWriter = 0;
 
+    // First, build up our vertex lattice
     float deltaTheta = cran_pi * cf_rcp((float)longitudeSegments);
     float deltaPhi = cran_tao * cf_rcp((float)latitudeSegments);
     float theta = 0.0f;
-    for (uint32_t thetaI = 0; thetaI < longitudeSegments; theta += deltaTheta, thetaI++)
+    for (uint32_t thetaI = 0; thetaI < longitudeVertexCount; theta += deltaTheta, thetaI++)
     {
         float phi = 0.0f;
-        for (uint32_t phiI = 0; phiI < latitudeSegments; phi += deltaPhi, phiI++)
+        for (uint32_t phiI = 0; phiI < latitudeVertexCount; phi += deltaPhi, phiI++)
         {
-            cv3 pos[] =
+            cv3 pos = cv3_from_spherical(phi, theta, 1.0f);
+
+            mesh.Positions[vertexWriter] = packPosition(cv3_mulf(pos, radius));
+            mesh.Normals[vertexWriter] = packNormal(pos);
+            mesh.UVs[vertexWriter] = (cv2) { phi / cran_tao, theta / cran_pi };
+
+            vertexWriter++;
+        }
+    }
+
+    for (uint32_t thetaI = 0; thetaI < longitudeSegments; thetaI++)
+    {
+        uint32_t thetaVertStart = latitudeVertexCount * thetaI;
+        for (uint32_t phiI = 0; phiI < latitudeSegments; phiI++)
+        {
+            uint32_t rootVertex = thetaVertStart;
+            uint32_t quadIndices[4] =
             {
-                cv3_from_spherical(theta, phi, 1.0f),
-                cv3_from_spherical(theta, phi + deltaPhi, 1.0f),
-                cv3_from_spherical(theta + deltaTheta, phi, 1.0f),
-                cv3_from_spherical(theta + deltaTheta, phi + deltaPhi, 1.0f),
+                thetaVertStart + phiI,
+                thetaVertStart + phiI + 1,
+                thetaVertStart + latitudeVertexCount + phiI,
+                thetaVertStart + latitudeVertexCount + phiI + 1,
             };
 
-            uint16_t quadIndices[6] = { 0, 2, 3, 0, 3, 1 };
-            for (uint32_t i = 0; i < 6; i++)
-            {
-                mesh.Indices[indexWriter + i] = quadIndices[i] + vertexWriter;
-            }
+            mesh.Indices[indexWriter + 0] = (uint16_t)quadIndices[0];
+            mesh.Indices[indexWriter + 1] = (uint16_t)quadIndices[1];
+            mesh.Indices[indexWriter + 2] = (uint16_t)quadIndices[2];
 
-            for (uint32_t i = 0; i < 4; i++)
-            {
-                mesh.Positions[vertexWriter + i] = packPosition(cv3_mulf(pos[i], radius));
-                mesh.Normals[vertexWriter + i] = packNormal(pos[i]);
-            }
+            mesh.Indices[indexWriter + 3] = (uint16_t)quadIndices[1];
+            mesh.Indices[indexWriter + 4] = (uint16_t)quadIndices[3];
+            mesh.Indices[indexWriter + 5] = (uint16_t)quadIndices[2];
 
-            vertexWriter += 4;
             indexWriter += 6;
         }
     }
-    ib_assert(vertexWriter == segmentVertexCount);
+
+    ib_assert(vertexWriter == vertexCount);
     ib_assert(indexWriter == segmentIndexCount);
 
     return mesh;
@@ -150,9 +171,9 @@ static MeshDesc createPlane(float width)
     mesh.Indices = (uint16_t*)transientAlloc(indexCount * sizeof(uint16_t), alignof(uint16_t));
     mesh.Positions = (c16i3*)transientAlloc(vertexCount * sizeof(c16i3), alignof(c16i3));
     mesh.Normals = (c16i2*)transientAlloc(vertexCount * sizeof(c16i2), alignof(c16i2));
+    mesh.UVs = (cv2*)transientAlloc(vertexCount * sizeof(cv2), alignof(cv2));
     mesh.IndexCount = indexCount;
-    mesh.PositionCount = vertexCount;
-    mesh.NormalCount = vertexCount;
+    mesh.VertexCount = vertexCount;
 
     float halfWidth = width * 0.5f;
     cv3 pos[] =
@@ -161,6 +182,14 @@ static MeshDesc createPlane(float width)
         (cv3) { halfWidth, -halfWidth, 0.0f },
         (cv3) { -halfWidth, halfWidth, 0.0f },
         (cv3) { halfWidth, halfWidth, 0.0f },
+    };
+
+    cv2 uv[] =
+    {
+        (cv2) { 0.0f, 0.0f },
+        (cv2) { 1.0f, 0.0f },
+        (cv2) { 0.0f, 1.0f },
+        (cv2) { 1.0f, 1.0f },
     };
 
     uint16_t quadIndices[6] = { 0, 1, 3, 0, 3, 2 };
@@ -173,6 +202,78 @@ static MeshDesc createPlane(float width)
     {
         mesh.Positions[i] = packPosition(pos[i]);
         mesh.Normals[i] = packNormal((cv3){0.0f, 0.0f, 1.0f});
+        mesh.UVs[i] = uv[i];
+    }
+
+    return mesh;
+}
+
+static MeshDesc createBox(float width)
+{
+    MeshDesc mesh = {0};
+    uint32_t quadCount = 6u;
+    uint32_t indexCount = quadCount * 6;
+    uint32_t vertexCount = quadCount * 4;
+
+    mesh.Indices = (uint16_t*)transientAlloc(indexCount * sizeof(uint16_t), alignof(uint16_t));
+    mesh.Positions = (c16i3*)transientAlloc(vertexCount * sizeof(c16i3), alignof(c16i3));
+    mesh.Normals = (c16i2*)transientAlloc(vertexCount * sizeof(c16i2), alignof(c16i2));
+    mesh.UVs = (cv2*)transientAlloc(vertexCount * sizeof(cv2), alignof(cv2));
+    mesh.IndexCount = indexCount;
+    mesh.VertexCount = vertexCount;
+
+    float halfWidth = width * 0.5f;
+    cv3 pos[] =
+    {
+        (cv3) { -halfWidth, -halfWidth, -halfWidth },
+        (cv3) { halfWidth, -halfWidth, -halfWidth },
+        (cv3) { -halfWidth, halfWidth, -halfWidth },
+        (cv3) { halfWidth, halfWidth, -halfWidth },
+
+        (cv3) { -halfWidth, -halfWidth, halfWidth },
+        (cv3) { halfWidth, -halfWidth, halfWidth },
+        (cv3) { -halfWidth, halfWidth, halfWidth },
+        (cv3) { halfWidth, halfWidth, halfWidth },
+    };
+
+    cv2 uv[] =
+    {
+        (cv2) { 0.0f, 0.0f },
+        (cv2) { 1.0f, 0.0f },
+        (cv2) { 0.0f, 1.0f },
+        (cv2) { 1.0f, 1.0f },
+
+        (cv2) { 0.0f, 1.0f },
+        (cv2) { 1.0f, 1.0f },
+        (cv2) { 0.0f, 0.0f },
+        (cv2) { 1.0f, 0.0f },
+    };
+
+    uint16_t quadIndices[] =
+    {
+        // Front face
+        0, 1, 3, 0, 3, 2,
+        // Back face
+        4, 7, 5, 4, 6, 7,
+        // Left Face
+        4, 0, 2, 4, 2, 6,
+        // Right Face
+        1, 5, 7, 1, 7, 3,
+        // Top Face
+        2, 3, 7, 2, 7, 6,
+        // Bottom Face
+        4, 5, 1, 4, 1, 0
+    };
+    for (uint32_t i = 0; i < ib_arrayCount(quadIndices); i++)
+    {
+        mesh.Indices[i] = quadIndices[i];
+    }
+
+    for (uint32_t i = 0; i < ib_arrayCount(pos); i++)
+    {
+        mesh.Positions[i] = packPosition(pos[i]);
+        mesh.Normals[i] = packNormal(cv3_normalize(pos[i]));
+        mesh.UVs[i] = uv[i];
     }
 
     return mesh;
@@ -181,9 +282,6 @@ static MeshDesc createPlane(float width)
 typedef struct
 {
     iba_TlsfAllocation Alloc;
-    uint32_t IndexOffset;
-    uint32_t PositionOffset;
-    uint32_t NormalOffset;
     uint32_t IndexCount;
     uint32_t VertexCount;
 } Mesh;
@@ -192,22 +290,30 @@ static Mesh allocMesh(MeshDesc desc)
 {
     Mesh mesh;
 
-    ib_assert(desc.PositionCount == desc.NormalCount);
-
     uint32_t indexSize = sizeof(uint16_t) * desc.IndexCount;
-    uint32_t positionSize = sizeof(c16i3) * desc.PositionCount;
-    uint32_t normalSize = sizeof(c16i2) * desc.NormalCount;
-    uint32_t allocationSize = indexSize + positionSize + normalSize;
+    uint32_t positionSize = sizeof(c16i3) * desc.VertexCount;
+    uint32_t normalSize = sizeof(c16i2) * desc.VertexCount;
+    uint32_t uvSize = sizeof(cv2) * desc.VertexCount;
+    uint32_t allocationSize = indexSize + positionSize + normalSize + uvSize;
     mesh.Alloc = iba_tlsfAlloc(&GlobalBufferMemoryAllocator, allocationSize, alignof(float));
-    mesh.IndexOffset = (uint32_t)mesh.Alloc.Offset;
-    memcpy(GlobalBufferMemory.Allocation.CPUMemory + mesh.IndexOffset, desc.Indices, indexSize);
-    mesh.PositionOffset = (uint32_t)(mesh.Alloc.Offset + indexSize);
-    memcpy(GlobalBufferMemory.Allocation.CPUMemory + mesh.PositionOffset, desc.Positions, positionSize);
-    mesh.NormalOffset = (uint32_t)(mesh.Alloc.Offset + indexSize + positionSize);
-    memcpy(GlobalBufferMemory.Allocation.CPUMemory + mesh.NormalOffset, desc.Normals, normalSize);
+
+    uint32_t writeOffset = (uint32_t)mesh.Alloc.Offset;
+    memcpy(GlobalBufferMemory.Allocation.CPUMemory + writeOffset, desc.Indices, indexSize);
+    writeOffset += indexSize;
+
+    memcpy(GlobalBufferMemory.Allocation.CPUMemory + writeOffset, desc.Positions, positionSize);
+    writeOffset += positionSize;
+
+    memcpy(GlobalBufferMemory.Allocation.CPUMemory + writeOffset, desc.Normals, normalSize);
+    writeOffset += normalSize;
+
+    // Align on 4 byte boundary.
+    uint32_t alignementMask = sizeof(float) - 1;
+    writeOffset = (writeOffset + alignementMask) & ~alignementMask;
+    memcpy(GlobalBufferMemory.Allocation.CPUMemory + writeOffset, desc.UVs, uvSize);
 
     mesh.IndexCount = desc.IndexCount;
-    mesh.VertexCount = desc.PositionCount;
+    mesh.VertexCount = desc.VertexCount;
 
     return mesh;
 }
@@ -256,6 +362,7 @@ ib_ComputePipeline RasterizerCompute;
 
 Mesh SphereMesh;
 Mesh PlaneMesh;
+Mesh BoxMesh;
 
 ibr_RenderGraph* beginRenderGraph(ib_Surface* surface)
 {
@@ -298,6 +405,8 @@ void loadShaders()
 ibr_DefaultResources DefaultResources;
 static void init(void)
 {
+    stm_setup();
+
     GetCurrentDirectoryA(ib_arrayCount(CurrentWorkingDirectory), CurrentWorkingDirectory);
 
     ib_initCore((ib_CoreDesc)
@@ -336,11 +445,14 @@ static void init(void)
                            },
                            &StackAllocator);
 
-    MeshDesc sphereMeshDesc = createSphereMesh(4, 4, 1.0f);
+    MeshDesc sphereMeshDesc = createSphereMesh(16, 16, 1.0f);
     SphereMesh = allocMesh(sphereMeshDesc);
 
     MeshDesc planeMeshDesc = createPlane(1.0f);
     PlaneMesh = allocMesh(planeMeshDesc);
+
+    MeshDesc boxMeshDesc = createBox(1.0f);
+    BoxMesh = allocMesh(boxMeshDesc);
 
     loadShaders();
 
@@ -374,6 +486,7 @@ static void kill(void)
     vkDeviceWaitIdle(Core.LogicalDevice);
     freeMesh(&SphereMesh);
     freeMesh(&PlaneMesh);
+    freeMesh(&BoxMesh);
     ib_freeComputePipeline(&Core, &RasterizerCompute);
     ibr_killDefaultResources(&Core, &DefaultResources);
 
@@ -448,16 +561,27 @@ static void update(void)
                                });
 
 
+        static uint64_t currentTime = 0u;
+        static float rotation = 0.0f;
+
+        uint64_t lapTime = stm_laptime(&currentTime);
+        float deltaTime = (float)stm_sec(lapTime);
+        if (!PauseTime)
+        {
+            rotation += deltaTime;
+        }
+
         float aspectRatio = (float)graph->ScreenExtent.width / (float)graph->ScreenExtent.height;
         cm4 projection = cm4_perspective_projection(tanf(cran_pi / 4.0f), 0.1f, 1000.0f, aspectRatio);
         cm4 view = cm4_translate((cv3) { 0.0f, 0.0f, 2.0f });
-        cm4 projectionFromWorld = cm4_mul(projection, view);
+        cm4 rotate = cm4_mul(cm4_rotate_xz(rotation), cm4_rotate_xy(rotation));
+        cm4 projectionFromWorld = cm4_mul(cm4_mul(projection, view), rotate);
         ibr_writeResource(graph, commands, &rasterizerParams, (ibr_WriteData)
                           {
                               .Data = &(RasterizerParams)
                               {
                                   .OutputDimensions = (cv2) { (float)graph->ScreenExtent.width, (float)graph->ScreenExtent.height },
-                                  .MeshAddress = GlobalBufferMemory.DeviceAddress + SphereMesh.IndexOffset,
+                                  .MeshAddress = GlobalBufferMemory.DeviceAddress + SphereMesh.Alloc.Offset,
                                   .IndexCount = SphereMesh.IndexCount,
                                   .VertexCount = SphereMesh.VertexCount,
                                   .ProjectionFromWorld = projectionFromWorld,
@@ -569,10 +693,14 @@ void events(sapp_event const* event)
     {
         ib_rebuildSurface(&Core, &Surface);
     }
-    if (event->key_code == SAPP_KEYCODE_R)
+    else if (event->type == SAPP_EVENTTYPE_KEY_DOWN && event->key_code == SAPP_KEYCODE_R)
     {
         vkDeviceWaitIdle(Core.LogicalDevice);
         loadShaders();
+    }
+    else if (event->type == SAPP_EVENTTYPE_KEY_DOWN && event->key_code == SAPP_KEYCODE_SPACE)
+    {
+        PauseTime = !PauseTime;
     }
 }
 

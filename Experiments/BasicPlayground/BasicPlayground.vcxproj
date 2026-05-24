@@ -96,6 +96,7 @@
     <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_rendergraph.h" />
     <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_util.h" />
     <ClInclude Include="..\..\Sokol\Include\sokol\sokol_app.h" />
+    <ClInclude Include="..\..\Sokol\Include\sokol\sokol_time.h" />
     <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vk_enum_string_helper.h" />
     <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vk_icd.h" />
     <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vk_layer.h" />

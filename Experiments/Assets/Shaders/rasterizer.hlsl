@@ -1,4 +1,6 @@
-#include "ib_Sampler.hsh"
+#include "ib_sampler.hsh"
+#include "ib_encodings.hsh"
+#include "ib_math.hsh"
 
 // References:
 // https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm#15.4%20Clipping
@@ -34,6 +36,38 @@ float3 loadVertexPos(uint vertexIndex)
     int16_t3 packedPos = vk::RawBufferLoad<int16_t3>(Params.MeshAddress + indexOffset + vertexIndex * sizeof(uint16_t3));
 
     return toFloatingPoint((float3)packedPos, 7.0f);
+}
+
+float2 loadNormalOct(uint vertexIndex)
+{
+    uint indexOffset = Params.IndexCount * sizeof(uint16_t);
+    uint positionOffset = Params.VertexCount * sizeof(int16_t3);
+    uint readOffset = indexOffset + positionOffset;
+    uint16_t2 packedOct = vk::RawBufferLoad<uint16_t2>(Params.MeshAddress + readOffset + vertexIndex * sizeof(uint16_t2));
+    return toFloatingPoint((float2)packedOct, 15.0f);
+}
+
+float2 loadUV(uint vertexIndex)
+{
+    uint indexOffset = Params.IndexCount * sizeof(uint16_t);
+    uint positionOffset = Params.VertexCount * sizeof(int16_t3);
+    uint normalOffset = Params.VertexCount * sizeof(int16_t2);
+    uint readOffset = indexOffset + positionOffset + normalOffset;
+
+    uint32_t alignementMask = sizeof(float) - 1;
+    readOffset = (readOffset + alignementMask) & ~alignementMask;
+
+    return vk::RawBufferLoad<float2>(Params.MeshAddress + readOffset + vertexIndex * sizeof(float2));
+}
+
+template<int C>
+vector<float, C> interpolate(vector<float, C> a0, vector<float, C> a1, vector<float, C> a2, float3 barycentrics)
+{
+    vector<float, C> result = 0.0f;
+    result += a0 * barycentrics.x;
+    result += a1 * barycentrics.y;
+    result += a2 * barycentrics.z;
+    return result;
 }
 
 float roundToFixedPoint(float value)
@@ -113,13 +147,15 @@ void CS(uint2 aDispatchThreadId : SV_DispatchThreadId)
 
     float2 pixCoord = (float2)aDispatchThreadId + 0.5f;
 
-    float4 output = 0.0f;
+    float pixDepth = 1.0f;
+    uint16_t3 pixTri = 0;
+    float3 barycentrics = 0.0f;
     [loop]
     for (uint i = 0; i < Params.IndexCount; i+=3)
     {
         uint16_t3 tri = loadTriangle(i);
 
-        float2 triPixelCoord[3];
+        float4 triPixelVert[3];
         for (uint v = 0; v < 3; v++)
         {
             float3 localPos = loadVertexPos(tri[v]);
@@ -127,30 +163,68 @@ void CS(uint2 aDispatchThreadId : SV_DispatchThreadId)
             float4 clipPos = mul(Params.ProjectionFromWorld, float4(localPos, 1.0f));
             float3 ndcPos = clipPos.xyz / clipPos.w;
             float2 vertexUV = mad(ndcPos.xy, 0.5f, 0.5f);
-            triPixelCoord[v] = roundToFixedPoint(vertexUV * Params.OutputDimensions);
+            triPixelVert[v] = float4(roundToFixedPoint(vertexUV * Params.OutputDimensions), ndcPos.z, clipPos.w);
         }
 
-        if (all(aDispatchThreadId == 0))
-        {
-            //printf("%v2f, %v2f, %v2f", triPixelCoord[0], triPixelCoord[1], triPixelCoord[2]);
-        }
-
-        float e0 = ccwEdgeFunction(pixCoord, triPixelCoord[1], triPixelCoord[0]);
-        float e1 = ccwEdgeFunction(pixCoord, triPixelCoord[2], triPixelCoord[1]);
-        float e2 = ccwEdgeFunction(pixCoord, triPixelCoord[0], triPixelCoord[2]);
+        float e0 = ccwEdgeFunction(pixCoord, triPixelVert[1].xy, triPixelVert[0].xy);
+        float e1 = ccwEdgeFunction(pixCoord, triPixelVert[2].xy, triPixelVert[1].xy);
+        float e2 = ccwEdgeFunction(pixCoord, triPixelVert[0].xy, triPixelVert[2].xy);
 
         // https://fgiesen.wordpress.com/2013/02/08/triangle-rasterization-in-practice/
         // TODO: Can we apply a bias here like suggested in the link above?
-        bool topLeft0 = (e0 == 0.0f) && isCCWTopLeftEdge(triPixelCoord[1], triPixelCoord[0]);
-        bool topLeft1 = (e1 == 0.0f) && isCCWTopLeftEdge(triPixelCoord[2], triPixelCoord[1]);
-        bool topLeft2 = (e2 == 0.0f) && isCCWTopLeftEdge(triPixelCoord[0], triPixelCoord[2]);
+        // How do we simplify this expression?
+        bool topLeft0 = (e0 == 0.0f) && isCCWTopLeftEdge(triPixelVert[1].xy, triPixelVert[0].xy);
+        bool topLeft1 = (e1 == 0.0f) && isCCWTopLeftEdge(triPixelVert[2].xy, triPixelVert[1].xy);
+        bool topLeft2 = (e2 == 0.0f) && isCCWTopLeftEdge(triPixelVert[0].xy, triPixelVert[2].xy);
 
         if ((e0 > 0.0f || topLeft0)
             && (e1 > 0.0f || topLeft1)
             && (e2 > 0.0f || topLeft2))
         {
-            output += 0.5f;
+            float totalArea = e0 + e1 + e2;
+            float3 screenBarycentrics = { e1 / totalArea, e2 / totalArea, e0 / totalArea };
+            float sampleDepth = dot(float3(triPixelVert[0].z, triPixelVert[1].z, triPixelVert[2].z), screenBarycentrics);
+
+            if (sampleDepth < pixDepth && sampleDepth >= 0.0f)
+            {
+                pixTri = tri;
+
+                float3 perVertexRcpW = rcp(float3(triPixelVert[0].w, triPixelVert[1].w, triPixelVert[2].w));
+
+                // Interpolate 1/W along our screenspace triangle then recover W.
+                float interpolatedW = rcp(dot(perVertexRcpW, screenBarycentrics));
+
+                // When we want to transform our coordinate into perspective correct interpolation
+                // Apply our per vertex 1/W to get Attribute0/W0
+                // Then apply our screenspace barycentric
+                // Attribute0/W0*Barycentric0
+                // And finally apply our interpolated W
+                // Attribute0/W0*Barycentric0*InterpolatedW
+                //
+                // We just bake these operations into a worldBarycentrics variable to apply to our attributes later down the line.
+                barycentrics = perVertexRcpW * screenBarycentrics * interpolatedW;
+                pixDepth = sampleDepth;
+            }
         }
+    }
+
+    float4 output = 0.0f;
+    if (any(pixTri != 0))
+    {
+        float2 uv0 = loadUV(pixTri[0]);
+        float2 uv1 = loadUV(pixTri[1]);
+        float2 uv2 = loadUV(pixTri[2]);
+
+        float2 uv = interpolate(uv0, uv1, uv2, barycentrics);
+
+        float2 oct0 = loadNormalOct(pixTri[0]);
+        float2 oct1 = loadNormalOct(pixTri[1]);
+        float2 oct2 = loadNormalOct(pixTri[2]);
+        float3 normal = fromSquareOctahedral(interpolate(oct0, oct1, oct2, barycentrics));
+
+        float3 albedo = Input.SampleLevel(Samplers[ib_Sampler_NearestRepeat], uv * 10.0f, 0.0f).rgb;
+        float3 light = normalize(float3(1.0f, 1.0f, 0.0f));
+        output.rgb += mad(dot(light, normal), 0.5f, 0.5f) * albedo / Pi;
     }
 
     Output[aDispatchThreadId] = output;
