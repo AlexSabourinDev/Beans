@@ -104,9 +104,11 @@ static MeshDesc createSphereMesh(uint32_t latitudeSegments, uint32_t longitudeSe
 
     float deltaTheta = cran_pi * cf_rcp((float)longitudeSegments);
     float deltaPhi = cran_tao * cf_rcp((float)latitudeSegments);
-    for (float theta = 0.0f; theta < cran_pi; theta += deltaTheta)
+    float theta = 0.0f;
+    for (uint32_t thetaI = 0; thetaI < longitudeSegments; theta += deltaTheta, thetaI++)
     {
-        for (float phi = 0; phi < cran_tao; phi += deltaPhi)
+        float phi = 0.0f;
+        for (uint32_t phiI = 0; phiI < latitudeSegments; phi += deltaPhi, phiI++)
         {
             cv3 pos[] =
             {
@@ -138,17 +140,59 @@ static MeshDesc createSphereMesh(uint32_t latitudeSegments, uint32_t longitudeSe
     return mesh;
 }
 
+static MeshDesc createPlane(float width)
+{
+    MeshDesc mesh = {0};
+    uint32_t quadCount = 1u;
+    uint32_t indexCount = quadCount * 6;
+    uint32_t vertexCount = quadCount * 4;
+
+    mesh.Indices = (uint16_t*)transientAlloc(indexCount * sizeof(uint16_t), alignof(uint16_t));
+    mesh.Positions = (c16i3*)transientAlloc(vertexCount * sizeof(c16i3), alignof(c16i3));
+    mesh.Normals = (c16i2*)transientAlloc(vertexCount * sizeof(c16i2), alignof(c16i2));
+    mesh.IndexCount = indexCount;
+    mesh.PositionCount = vertexCount;
+    mesh.NormalCount = vertexCount;
+
+    float halfWidth = width * 0.5f;
+    cv3 pos[] =
+    {
+        (cv3) { -halfWidth, -halfWidth, 0.0f },
+        (cv3) { halfWidth, -halfWidth, 0.0f },
+        (cv3) { -halfWidth, halfWidth, 0.0f },
+        (cv3) { halfWidth, halfWidth, 0.0f },
+    };
+
+    uint16_t quadIndices[6] = { 0, 1, 3, 0, 3, 2 };
+    for (uint32_t i = 0; i < 6; i++)
+    {
+        mesh.Indices[i] = quadIndices[i];
+    }
+
+    for (uint32_t i = 0; i < 4; i++)
+    {
+        mesh.Positions[i] = packPosition(pos[i]);
+        mesh.Normals[i] = packNormal((cv3){0.0f, 0.0f, 1.0f});
+    }
+
+    return mesh;
+}
+
 typedef struct
 {
     iba_TlsfAllocation Alloc;
     uint32_t IndexOffset;
     uint32_t PositionOffset;
     uint32_t NormalOffset;
+    uint32_t IndexCount;
+    uint32_t VertexCount;
 } Mesh;
 
 static Mesh allocMesh(MeshDesc desc)
 {
     Mesh mesh;
+
+    ib_assert(desc.PositionCount == desc.NormalCount);
 
     uint32_t indexSize = sizeof(uint16_t) * desc.IndexCount;
     uint32_t positionSize = sizeof(c16i3) * desc.PositionCount;
@@ -161,6 +205,9 @@ static Mesh allocMesh(MeshDesc desc)
     memcpy(GlobalBufferMemory.Allocation.CPUMemory + mesh.PositionOffset, desc.Positions, positionSize);
     mesh.NormalOffset = (uint32_t)(mesh.Alloc.Offset + indexSize + positionSize);
     memcpy(GlobalBufferMemory.Allocation.CPUMemory + mesh.NormalOffset, desc.Normals, normalSize);
+
+    mesh.IndexCount = desc.IndexCount;
+    mesh.VertexCount = desc.PositionCount;
 
     return mesh;
 }
@@ -182,7 +229,11 @@ static void compileShader(char const* shader, char const *shaderOutput, char con
 
 typedef struct
 {
-    cu2 OutputDimensions;
+    cv2 OutputDimensions;
+    uint64_t MeshAddress;
+    uint32_t IndexCount;
+    uint32_t VertexCount;
+    cm4 ProjectionFromWorld;
 } RasterizerParams;
 
 enum
@@ -204,6 +255,7 @@ ib_ShaderInputDesc const RasterizerInputs[] =
 ib_ComputePipeline RasterizerCompute;
 
 Mesh SphereMesh;
+Mesh PlaneMesh;
 
 ibr_RenderGraph* beginRenderGraph(ib_Surface* surface)
 {
@@ -219,11 +271,34 @@ ibr_RenderGraph* beginRenderGraph(ib_Surface* surface)
     return frameBegun ? graph : NULL;
 }
 
+void loadShaders()
+{
+    compileShader("rasterizer.hlsl", "rasterizer.spv", "CS", "compute");
+
+    void* rasterizerSpv;
+    size_t rasterizerSpvSize;
+    readWholeFile("../../CompiledAssets/Shaders/rasterizer.spv", &rasterizerSpv, &rasterizerSpvSize);
+    ib_freeComputePipeline(&Core, &RasterizerCompute);
+    RasterizerCompute = ib_allocComputePipeline(&Core, (ib_ComputePipelineDesc)
+                            {
+                                .ShaderDesc = (ib_ShaderDesc)
+                                {
+                                    .EntryPoint = "CS",
+                                    .Code = rasterizerSpv,
+                                    .CodeSize = rasterizerSpvSize,
+                                    .Stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                                },
+                                .ShaderInputs =
+                                {
+                                    { ib_staticArrayRange(RasterizerInputs) }
+                                }
+                            });
+}
+
 ibr_DefaultResources DefaultResources;
 static void init(void)
 {
     GetCurrentDirectoryA(ib_arrayCount(CurrentWorkingDirectory), CurrentWorkingDirectory);
-    compileShader("rasterizer.hlsl", "rasterizer.spv", "CS", "compute");
 
     ib_initCore((ib_CoreDesc)
                 {
@@ -261,26 +336,13 @@ static void init(void)
                            },
                            &StackAllocator);
 
-    MeshDesc sphereMeshDesc = createSphereMesh(32, 32, 1.0f);
+    MeshDesc sphereMeshDesc = createSphereMesh(4, 4, 1.0f);
     SphereMesh = allocMesh(sphereMeshDesc);
 
-    void* rasterizerSpv;
-    size_t rasterizerSpvSize;
-    readWholeFile("../../CompiledAssets/Shaders/rasterizer.spv", &rasterizerSpv, &rasterizerSpvSize);
-    RasterizerCompute = ib_allocComputePipeline(&Core, (ib_ComputePipelineDesc)
-                            {
-                                .ShaderDesc = (ib_ShaderDesc)
-                                {
-                                    .EntryPoint = "CS",
-                                    .Code = rasterizerSpv,
-                                    .CodeSize = rasterizerSpvSize,
-                                    .Stage = VK_SHADER_STAGE_COMPUTE_BIT,
-                                },
-                                .ShaderInputs =
-                                {
-                                    { ib_staticArrayRange(RasterizerInputs) }
-                                }
-                            });
+    MeshDesc planeMeshDesc = createPlane(1.0f);
+    PlaneMesh = allocMesh(planeMeshDesc);
+
+    loadShaders();
 
     // Spin up a graph for GPU-side initialization
     ibr_RenderGraph* graph = beginRenderGraph(NULL);
@@ -311,6 +373,7 @@ static void kill(void)
     iba_killStackAllocator(&StackAllocator);
     vkDeviceWaitIdle(Core.LogicalDevice);
     freeMesh(&SphereMesh);
+    freeMesh(&PlaneMesh);
     ib_freeComputePipeline(&Core, &RasterizerCompute);
     ibr_killDefaultResources(&Core, &DefaultResources);
 
@@ -384,11 +447,20 @@ static void update(void)
                                    }
                                });
 
+
+        float aspectRatio = (float)graph->ScreenExtent.width / (float)graph->ScreenExtent.height;
+        cm4 projection = cm4_perspective_projection(tanf(cran_pi / 4.0f), 0.1f, 1000.0f, aspectRatio);
+        cm4 view = cm4_translate((cv3) { 0.0f, 0.0f, 2.0f });
+        cm4 projectionFromWorld = cm4_mul(projection, view);
         ibr_writeResource(graph, commands, &rasterizerParams, (ibr_WriteData)
                           {
                               .Data = &(RasterizerParams)
                               {
-                                  .OutputDimensions = (cu2) { graph->ScreenExtent.width, graph->ScreenExtent.height }
+                                  .OutputDimensions = (cv2) { (float)graph->ScreenExtent.width, (float)graph->ScreenExtent.height },
+                                  .MeshAddress = GlobalBufferMemory.DeviceAddress + SphereMesh.IndexOffset,
+                                  .IndexCount = SphereMesh.IndexCount,
+                                  .VertexCount = SphereMesh.VertexCount,
+                                  .ProjectionFromWorld = projectionFromWorld,
                               },
                               .Size = sizeof(RasterizerParams)
                           });
@@ -496,6 +568,11 @@ void events(sapp_event const* event)
     if (event->type == SAPP_EVENTTYPE_RESIZED)
     {
         ib_rebuildSurface(&Core, &Surface);
+    }
+    if (event->key_code == SAPP_KEYCODE_R)
+    {
+        vkDeviceWaitIdle(Core.LogicalDevice);
+        loadShaders();
     }
 }
 

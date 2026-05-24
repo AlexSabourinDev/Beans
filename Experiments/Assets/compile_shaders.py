@@ -22,6 +22,7 @@ def compileShader(input, output, shaderType, entryPoint):
                     f"-T {shaderType}",
                     f"-E {entryPoint}",
                     "-fspv-target-env=vulkan1.3",
+                    "-fvk-use-scalar-layout",
                     "-WX",
                     "-O3",
                     "-enable-16bit-types",
