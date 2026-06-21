@@ -134,17 +134,8 @@ int main()
 			._4 = { .x = 0x3D62, .y = 0xBB84 }
 		};
 
-		ibr_Resource resource = ibr_allocPassResource(graph, commands, (ibr_ResourceDesc)
-													  {
-														  .Type = ibr_ResourceType_Buffer,
-														  .Flags = ibr_ResourceFlag_Transient,
-														  .BufferDesc =
-														  {
-															  .Usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-															  .Size = sizeof(Data),
-															  .RequiredMemoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-														  }
-													  });
+		ibr_Resource resource = ibr_allocPassResource(graph, commands, 
+            ibr_transientBufferResourceDesc(sizeof(Data), ibr_TransientBufferFlag_Device | ibr_TransientBufferFlag_UniformBufferBit, "Data"));
 
 		ibr_writeResource(graph, commands, &resource, (ibr_WriteData)
 						  {
@@ -162,13 +153,7 @@ int main()
 																	  &resource
 																  })
 														  });
-		vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_COMPUTE,
-								pipeline.Layout,
-								0u,
-								1u,
-								&input.DescriptorSet,
-								0u,
-								NULL);
+        ib_bindShaderInputToCompute(commands, &pipeline, &input);
 		vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.VulkanPipeline);
 	
 		vkCmdDispatch(commands, 128u, 128u, 1u);

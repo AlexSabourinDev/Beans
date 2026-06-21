@@ -404,6 +404,8 @@ inline void ib_reloadComputePipeline(ib_Core* core, ib_ComputePipeline* pipeline
     }
 }
 
+void ib_bindShaderInputToCompute(VkCommandBuffer commands, ib_ComputePipeline const* pipeline, ib_ShaderInput const* shaderInput);
+
 // Utility
 void ib_printComputePipelineStatistics(ib_Core* core, ib_ComputePipeline const* pipeline);
 

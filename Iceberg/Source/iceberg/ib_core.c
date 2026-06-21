@@ -1923,6 +1923,17 @@ void ib_freeComputePipeline(ib_Core* core, ib_ComputePipeline* pipeline)
     *pipeline = (ib_ComputePipeline) { 0 };
 }
 
+void ib_bindShaderInputToCompute(VkCommandBuffer commands, ib_ComputePipeline const* pipeline, ib_ShaderInput const* shaderInput)
+{
+    vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                pipeline->Layout,
+                                0u,
+                                1u,
+                                &shaderInput->DescriptorSet,
+                                0u,
+                                NULL);
+}
+
 // utility
 
 void ib_printComputePipelineStatistics(ib_Core* core, ib_ComputePipeline const* pipeline)

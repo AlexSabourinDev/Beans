@@ -566,13 +566,7 @@ static void update(void)
                                        })
                                    });
 
-        vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_COMPUTE,
-                                RasterizerCompute.Layout,
-                                0u,
-                                1u,
-                                &rasterizerInput.DescriptorSet,
-                                0u,
-                                NULL);
+        ib_bindShaderInputToCompute(commands, &RasterizerCompute, &rasterizerInput);
         vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, RasterizerCompute.VulkanPipeline);
         vkCmdDispatch(commands, cu_div_ceil(graph->ScreenExtent.width, 8u), cu_div_ceil(graph->ScreenExtent.height, 8u), 1u);
         ibr_endComputePass(graph, commands);
