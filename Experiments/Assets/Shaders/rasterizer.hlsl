@@ -137,95 +137,142 @@ bool isCCWTopLeftEdge(float2 v1, float2 v0)
     return (horizontalEdge && leftTraveling) || leftEdge;
 }
 
-[numthreads(8,8,1)]
-void CS(uint2 aDispatchThreadId : SV_DispatchThreadId)
+struct NDCTri
 {
-    if (any(aDispatchThreadId >= Params.OutputDimensions))
-    {
-        return;
-    }
+    float4 Verts[3];
+    uint16_t3 Indices;
+};
 
-    float2 pixCoord = (float2)aDispatchThreadId + 0.5f;
+static uint const ThreadGroupXY = 8u;
+static uint const ThreadGroupSize = ThreadGroupXY * ThreadGroupXY;
+static uint const RasterizationQueueSize = ThreadGroupSize;
+groupshared NDCTri RasterizationQueue[RasterizationQueueSize];
+groupshared uint RasterizationQueueCount;
 
+[numthreads(ThreadGroupXY,ThreadGroupXY,1)]
+void CS(uint2 dispatchThreadId : SV_DispatchThreadId, uint groupIndex : SV_GroupIndex)
+{
     float pixDepth = 1.0f;
     uint16_t3 pixTri = 0;
     float3 barycentrics = 0.0f;
     [loop]
-    for (uint i = 0; i < Params.IndexCount; i+=3)
+    for (uint batchIndex = 0u; batchIndex < Params.IndexCount; batchIndex += ThreadGroupSize)
     {
-        uint16_t3 tri = loadTriangle(i);
-
-        float4 triPixelVert[3];
-        for (uint v = 0; v < 3; v++)
+        // Clear our queue count before doing another batch.
+        if (groupIndex == 0)
         {
-            float3 localPos = loadVertexPos(tri[v]);
-            // No world matrix right now
-            float4 clipPos = mul(Params.ProjectionFromWorld, float4(localPos, 1.0f));
-            float3 ndcPos = clipPos.xyz / clipPos.w;
-            float2 vertexUV = mad(ndcPos.xy, 0.5f, 0.5f);
-            triPixelVert[v] = float4(roundToFixedPoint(vertexUV * Params.OutputDimensions), ndcPos.z, clipPos.w);
+            RasterizationQueueCount = 0u;
         }
+        GroupMemoryBarrierWithGroupSync();
 
-        float e0 = ccwEdgeFunction(pixCoord, triPixelVert[1].xy, triPixelVert[0].xy);
-        float e1 = ccwEdgeFunction(pixCoord, triPixelVert[2].xy, triPixelVert[1].xy);
-        float e2 = ccwEdgeFunction(pixCoord, triPixelVert[0].xy, triPixelVert[2].xy);
-
-        // https://fgiesen.wordpress.com/2013/02/08/triangle-rasterization-in-practice/
-        // TODO: Can we apply a bias here like suggested in the link above?
-        // How do we simplify this expression?
-        bool topLeft0 = (e0 == 0.0f) && isCCWTopLeftEdge(triPixelVert[1].xy, triPixelVert[0].xy);
-        bool topLeft1 = (e1 == 0.0f) && isCCWTopLeftEdge(triPixelVert[2].xy, triPixelVert[1].xy);
-        bool topLeft2 = (e2 == 0.0f) && isCCWTopLeftEdge(triPixelVert[0].xy, triPixelVert[2].xy);
-
-        if ((e0 > 0.0f || topLeft0)
-            && (e1 > 0.0f || topLeft1)
-            && (e2 > 0.0f || topLeft2))
+        // Transform `ThreadGroupSize` triangles
+        uint triangleIndex = batchIndex + groupIndex * 3;
+        if (triangleIndex < Params.IndexCount)
         {
-            float totalArea = e0 + e1 + e2;
-            float3 screenBarycentrics = { e1 / totalArea, e2 / totalArea, e0 / totalArea };
-            float sampleDepth = dot(float3(triPixelVert[0].z, triPixelVert[1].z, triPixelVert[2].z), screenBarycentrics);
-
-            if (sampleDepth < pixDepth && sampleDepth >= 0.0f)
+            uint16_t3 tri = loadTriangle(triangleIndex);
+            float4 triPixelVert[3];
+            for (uint v = 0; v < 3; v++)
             {
-                pixTri = tri;
+                float3 localPos = loadVertexPos(tri[v]);
+                // No world matrix right now
+                float4 clipPos = mul(Params.ProjectionFromWorld, float4(localPos, 1.0f));
+                float3 ndcPos = clipPos.xyz / clipPos.w;
+                float2 vertexUV = mad(ndcPos.xy, 0.5f, 0.5f);
+                triPixelVert[v] = float4(roundToFixedPoint(vertexUV * Params.OutputDimensions), ndcPos.z, clipPos.w);
+            }
 
-                float3 perVertexRcpW = rcp(float3(triPixelVert[0].w, triPixelVert[1].w, triPixelVert[2].w));
-
-                // Interpolate 1/W along our screenspace triangle then recover W.
-                float interpolatedW = rcp(dot(perVertexRcpW, screenBarycentrics));
-
-                // When we want to transform our coordinate into perspective correct interpolation
-                // Apply our per vertex 1/W to get Attribute0/W0
-                // Then apply our screenspace barycentric
-                // Attribute0/W0*Barycentric0
-                // And finally apply our interpolated W
-                // Attribute0/W0*Barycentric0*InterpolatedW
-                //
-                // We just bake these operations into a worldBarycentrics variable to apply to our attributes later down the line.
-                barycentrics = perVertexRcpW * screenBarycentrics * interpolatedW;
-                pixDepth = sampleDepth;
+            float2 v1ToV0 = triPixelVert[1].xy - triPixelVert[0].xy;
+            float2 v2ToV0 = triPixelVert[2].xy - triPixelVert[0].xy;
+            bool frontfacing = (v1ToV0.x * v2ToV0.y)-(v1ToV0.y * v2ToV0.x) > 0.0f;
+            if (frontfacing)
+            {
+                uint writeIndex;
+                InterlockedAdd(RasterizationQueueCount, 1u, writeIndex);
+                RasterizationQueue[writeIndex].Indices = tri;
+                for (uint w = 0; w < 3; w++)
+                {
+                    RasterizationQueue[writeIndex].Verts[w] = triPixelVert[w];
+                }
             }
         }
+        GroupMemoryBarrierWithGroupSync();
+
+        float2 pixCoord = (float2)dispatchThreadId + 0.5f;
+        // Rasterize front facing triangles
+        for (uint i = 0; i < RasterizationQueueCount; i++)
+        {
+            NDCTri tri = RasterizationQueue[i];
+
+            float e0 = ccwEdgeFunction(pixCoord, tri.Verts[1].xy, tri.Verts[0].xy);
+            float e1 = ccwEdgeFunction(pixCoord, tri.Verts[2].xy, tri.Verts[1].xy);
+            float e2 = ccwEdgeFunction(pixCoord, tri.Verts[0].xy, tri.Verts[2].xy);
+
+            // https://fgiesen.wordpress.com/2013/02/08/triangle-rasterization-in-practice/
+            // TODO: Can we apply a bias here like suggested in the link above?
+            // How do we simplify this expression?
+            bool topLeft0 = (e0 == 0.0f) && isCCWTopLeftEdge(tri.Verts[1].xy, tri.Verts[0].xy);
+            bool topLeft1 = (e1 == 0.0f) && isCCWTopLeftEdge(tri.Verts[2].xy, tri.Verts[1].xy);
+            bool topLeft2 = (e2 == 0.0f) && isCCWTopLeftEdge(tri.Verts[0].xy, tri.Verts[2].xy);
+
+            if ((e0 > 0.0f || topLeft0)
+                && (e1 > 0.0f || topLeft1)
+                && (e2 > 0.0f || topLeft2))
+            {
+                float totalArea = e0 + e1 + e2;
+                float3 screenBarycentrics = { e1 / totalArea, e2 / totalArea, e0 / totalArea };
+                float sampleDepth = dot(float3(tri.Verts[0].z, tri.Verts[1].z, tri.Verts[2].z), screenBarycentrics);
+
+                if (sampleDepth < pixDepth && sampleDepth >= 0.0f)
+                {
+                    pixTri = tri.Indices;
+
+                    float3 perVertexRcpW = rcp(float3(tri.Verts[0].w, tri.Verts[1].w, tri.Verts[2].w));
+
+                    // Interpolate 1/W along our screenspace triangle then recover W.
+                    float interpolatedW = rcp(dot(perVertexRcpW, screenBarycentrics));
+
+                    // When we want to transform our coordinate into perspective correct interpolation
+                    // Apply our per vertex 1/W to get Attribute0/W0
+                    // Then apply our screenspace barycentric
+                    // Attribute0/W0*Barycentric0
+                    // And finally apply our interpolated W
+                    // Attribute0/W0*Barycentric0*InterpolatedW
+                    //
+                    // We just bake these operations into a worldBarycentrics variable to apply to our attributes later down the line.
+                    barycentrics = perVertexRcpW * screenBarycentrics * interpolatedW;
+                    pixDepth = sampleDepth;
+                }
+            }
+        }
+
+        // Make sure our batch is complete before moving onto the next one.
+        // We're going to clear our triangle queue on the next iteration
+        // And we want to make sure we're not clearing it while some pixels are still reading the value.
+        // TODO: Could skip this barrier if we're on the last iteration.
+        GroupMemoryBarrierWithGroupSync();
     }
 
-    float4 output = 0.0f;
-    if (any(pixTri != 0))
+    if (any(dispatchThreadId < Params.OutputDimensions))
     {
-        float2 uv0 = loadUV(pixTri[0]);
-        float2 uv1 = loadUV(pixTri[1]);
-        float2 uv2 = loadUV(pixTri[2]);
+        float4 output = 0.0f;
+        if (any(pixTri != 0))
+        {
+            float2 uv0 = loadUV(pixTri[0]);
+            float2 uv1 = loadUV(pixTri[1]);
+            float2 uv2 = loadUV(pixTri[2]);
 
-        float2 uv = interpolate(uv0, uv1, uv2, barycentrics);
+            float2 uv = interpolate(uv0, uv1, uv2, barycentrics);
 
-        float2 oct0 = loadNormalOct(pixTri[0]);
-        float2 oct1 = loadNormalOct(pixTri[1]);
-        float2 oct2 = loadNormalOct(pixTri[2]);
-        float3 normal = fromSquareOctahedral(interpolate(oct0, oct1, oct2, barycentrics));
+            float2 oct0 = loadNormalOct(pixTri[0]);
+            float2 oct1 = loadNormalOct(pixTri[1]);
+            float2 oct2 = loadNormalOct(pixTri[2]);
+            float3 normal = fromSquareOctahedral(interpolate(oct0, oct1, oct2, barycentrics));
 
-        float3 albedo = Input.SampleLevel(Samplers[ib_Sampler_NearestRepeat], uv * 10.0f, 0.0f).rgb;
-        float3 light = normalize(float3(1.0f, 1.0f, 0.0f));
-        output.rgb += mad(dot(light, normal), 0.5f, 0.5f) * albedo / Pi;
+            float3 albedo = Input.SampleLevel(Samplers[ib_Sampler_NearestRepeat], uv * 10.0f, 0.0f).rgb;
+            float3 light = normalize(float3(1.0f, 1.0f, 0.0f));
+            output.rgb += mad(dot(light, normal), 0.5f, 0.5f) * albedo / Pi;
+        }
+
+        Output[dispatchThreadId] = output;
     }
-
-    Output[aDispatchThreadId] = output;
 }

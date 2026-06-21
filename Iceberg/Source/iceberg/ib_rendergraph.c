@@ -627,6 +627,92 @@ ibr_ResourceDesc ibr_textureResourceDesc(ib_Texture* texture, VkImageLayout layo
     };
 }
 
+ibr_ResourceDesc ibr_transientTextureResourceDesc(VkExtent3D extent, VkFormat format, ibr_TransientTextureFlags flags, char const* debugName)
+{
+    VkImageUsageFlags usageFlags = 0u;
+    VkImageAspectFlags aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT;
+    if ((flags & ibr_TransientTextureFlag_StorageBit) != 0u)
+    {
+        usageFlags |= VK_IMAGE_USAGE_STORAGE_BIT;
+    }
+
+    if ((flags & ibr_TransientTextureFlag_ColorAttachmentBit) != 0u)
+    {
+        usageFlags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    }
+
+    if ((flags & ibr_TransientTextureFlag_TransferSrcBit) != 0u)
+    {
+        usageFlags |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    }
+
+    if ((flags & ibr_TransientTextureFlag_TransferDstBit) != 0u)
+    {
+        usageFlags |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    }
+
+    if ((flags & ibr_TransientTextureFlag_DepthBit) != 0u)
+    {
+        usageFlags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        aspectFlags = VK_IMAGE_ASPECT_DEPTH_BIT;
+    }
+
+    return (ibr_ResourceDesc)
+    {
+        .Type = ibr_ResourceType_Texture,
+        .Flags = ibr_ResourceFlag_Transient,
+        .TextureDesc = (ib_TextureDesc)
+        {
+            .Usage = usageFlags,
+            .Format = format,
+            .Extent = extent,
+            .Aspect = aspectFlags,
+            .DebugName = debugName,
+        }
+    };
+}
+
+ibr_ResourceDesc ibr_transientBufferResourceDesc(size_t size, ibr_TransientBufferFlags flags, char const* debugName)
+{
+    VkMemoryPropertyFlags memoryFlags = 0u;
+    switch (flags & ibr_TransientBufferFlag_MemoryMask)
+    {
+    case ibr_TransientBufferFlag_Device:
+        memoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        break;
+    case ibr_TransientBufferFlag_Host:
+        memoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+        break;
+    default:
+        ib_assert(false, "Missing case!");
+        break;
+    }
+
+    VkBufferUsageFlags bufferUsage = 0u;
+    if ((flags & ibr_TransientBufferFlag_UniformBufferBit) != 0u)
+    {
+        bufferUsage |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    }
+
+    if ((flags & ibr_TransientBufferFlag_StorageBufferBit) != 0u)
+    {
+        bufferUsage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    }
+
+    return (ibr_ResourceDesc)
+    {
+        .Type = ibr_ResourceType_Buffer,
+        .Flags = ibr_ResourceFlag_Transient,
+        .BufferDesc =
+        {
+            .Usage = bufferUsage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            .Size = size,
+            .RequiredMemoryFlags = memoryFlags,
+            .DebugName = debugName,
+        }
+    };
+}
+
 void ibr_writeResources(ibr_RenderGraph* graph, VkCommandBuffer commands, ibr_WriteResourcesDesc desc)
 {
     ibr_WriteResourceDesc* begin = ib_srangeBegin(desc.Writes);

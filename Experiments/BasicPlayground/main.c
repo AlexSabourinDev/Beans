@@ -506,60 +506,14 @@ static void update(void)
         ib_beginCommandBuffer(&Core, commands);
         ibr_beginUpload(graph, commands);
 
-        ibr_Resource swapchainResource;
-        ibr_Resource rasterizerParams;
-        ibr_Resource inputTexture;
-        ibr_Resource renderOutput;
-        ibr_allocPassResources(graph, commands, (ibr_AllocPassResourcesDesc)
-                               {
-                                   .ResourceBindings =
-                                   {
-                                       (ibr_AllocResourceBinding)
-                                       {
-                                           .OutResource = &swapchainResource,
-                                           .Desc = ibr_textureResourceDesc(graph->SwapchainTexture, VK_IMAGE_LAYOUT_UNDEFINED)
-                                       },
-                                       (ibr_AllocResourceBinding)
-                                       {
-                                           .OutResource = &inputTexture,
-                                           .Desc = ibr_textureResourceDesc(&DefaultResources.Textures[ibr_DefaultTexture_Checkerboard], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-                                       },
-                                       (ibr_AllocResourceBinding)
-                                       {
-                                           .OutResource = &rasterizerParams,
-                                           .Desc = (ibr_ResourceDesc)
-                                           {
-                                               .Type = ibr_ResourceType_Buffer,
-                                               .Flags = ibr_ResourceFlag_Transient,
-                                               .BufferDesc =
-                                               {
-                                                   .Usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                                   .Size = sizeof(RasterizerParams),
-                                                   .RequiredMemoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                                   .DebugName = "RasterizerParams",
-                                               }
-                                           }
-                                       },
-                                       (ibr_AllocResourceBinding)
-                                       {
-                                           .OutResource = &renderOutput,
-                                           .Desc =
-                                           {
-                                               .Type = ibr_ResourceType_Texture,
-                                               .Flags = ibr_ResourceFlag_Transient,
-                                               .TextureDesc = (ib_TextureDesc)
-                                               {
-                                                   .Usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-                                                   .Format = VK_FORMAT_R8G8B8A8_UNORM,
-                                                   .Extent = (VkExtent3D){ graph->ScreenExtent.width, graph->ScreenExtent.height },
-                                                   .Aspect = VK_IMAGE_ASPECT_COLOR_BIT,
-                                                   .DebugName = "Render Output",
-                                               }
-                                           }
-                                       },
-                                   }
-                               });
-
+        ibr_Resource swapchainResource = ibr_allocPassResource(graph, commands,
+            ibr_textureResourceDesc(graph->SwapchainTexture, VK_IMAGE_LAYOUT_UNDEFINED));
+        ibr_Resource inputTexture = ibr_allocPassResource(graph, commands,
+            ibr_textureResourceDesc(&DefaultResources.Textures[ibr_DefaultTexture_Checkerboard], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+        ibr_Resource rasterizerParams = ibr_allocPassResource(graph, commands,
+            ibr_transientBufferResourceDesc(sizeof(RasterizerParams), ibr_TransientBufferFlag_Device | ibr_TransientBufferFlag_UniformBufferBit, "RasterizerParams"));
+        ibr_Resource renderOutput = ibr_allocPassResource(graph, commands,
+            ibr_transientTextureResourceDesc(ibr_ScreenExtent, VK_FORMAT_R8G8B8A8_UNORM, ibr_TransientTextureFlag_StorageBit | ibr_TransientTextureFlag_TransferSrcBit, "Render Output"));
 
         static uint64_t currentTime = 0u;
         static float rotation = 0.0f;

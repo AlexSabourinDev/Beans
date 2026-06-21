@@ -198,6 +198,28 @@ VkCommandBuffer ibr_allocTransientCommandBuffer(ibr_RenderGraph* graph, ib_Queue
 
 ibr_ResourceDesc ibr_textureResourceDesc(ib_Texture* texture, VkImageLayout layout);
 
+typedef enum
+{
+    ibr_TransientTextureFlag_StorageBit = 0x01,
+    ibr_TransientTextureFlag_ColorAttachmentBit = 0x02,
+    ibr_TransientTextureFlag_TransferSrcBit = 0x04,
+    ibr_TransientTextureFlag_TransferDstBit = 0x08,
+    ibr_TransientTextureFlag_DepthBit = 0x10
+} ibr_TransientTextureFlags;
+
+ibr_ResourceDesc ibr_transientTextureResourceDesc(VkExtent3D extent, VkFormat format, ibr_TransientTextureFlags flags, char const* debugName);
+
+typedef enum
+{
+    ibr_TransientBufferFlag_Device = 0x0001,
+    ibr_TransientBufferFlag_Host = 0x0002,
+    ibr_TransientBufferFlag_MemoryMask = 0x00FF,
+    ibr_TransientBufferFlag_UniformBufferBit = 0x0100,
+    ibr_TransientBufferFlag_StorageBufferBit = 0x0200,
+} ibr_TransientBufferFlags;
+
+ibr_ResourceDesc ibr_transientBufferResourceDesc(size_t size, ibr_TransientBufferFlags flags, char const* debugName);
+
 typedef struct
 {
     ibr_Resource* Resource;
