@@ -543,6 +543,8 @@ static void kill(void)
 
 static void update(void)
 {
+    iba_stackReset(&StackAllocator);
+
     ibr_RenderGraph* graph = beginRenderGraph(&Surface); 
     if (graph != NULL)
     {
@@ -737,11 +739,6 @@ static void update(void)
         ibr_endUpload(graph);
         ibr_endFrame(graph);
     }
-
-    // Reset at the end of the frame,
-    // this allows init to use the stack allocator as well
-    // if ever we multi-thread, this should happen at the very end of the frame
-    iba_stackReset(&StackAllocator);
 }
 
 void events(sapp_event const* event)
