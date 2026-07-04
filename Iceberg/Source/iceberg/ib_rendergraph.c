@@ -840,7 +840,7 @@ ib_ShaderInput ibr_allocTransientShaderInput(ibr_RenderGraph* graph, ib_AllocSha
 
 ib_ShaderInput ibr_resourcesToShaderInput(ibr_RenderGraph* graph, ibr_ResourceToShaderInputDesc desc)
 {
-	ib_assert(desc.Resources.Count <= desc.ShaderInputs.Count); // Can't have more resources than inputs
+	ib_assert(desc.Resources.Count == desc.ShaderInputs.Count); // Can't have more resources than inputs
 
 	ib_ShaderInputWrite* writes = (ib_ShaderInputWrite*)ibr_allocTransientMemory(graph, desc.Resources.Count * sizeof(ib_ShaderInputWrite), alignof(ib_ShaderInputWrite));
 

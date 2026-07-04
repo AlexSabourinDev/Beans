@@ -14,7 +14,6 @@
 
 static bool PauseTime = false;
 
-
 static iba_StackAllocator StackAllocator = { 0 };
 
 static ib_Core Core;
@@ -339,7 +338,6 @@ typedef struct
     uint64_t MeshAddress;
     uint32_t IndexCount;
     uint32_t VertexCount;
-    cm4 ProjectionFromWorld;
 } RasterizerParams;
 
 enum
@@ -347,7 +345,8 @@ enum
     Rasterizer_Params = 0,
     Rasterizer_Input,
     Rasterizer_Samplers,
-    Rasterizer_Output
+    Rasterizer_Output,
+    Rasterizer_PostTransformCache
 };
 
 ib_ShaderInputDesc const RasterizerInputs[] =
@@ -355,10 +354,34 @@ ib_ShaderInputDesc const RasterizerInputs[] =
     [Rasterizer_Params] = { .Index = Rasterizer_Params, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER },
     [Rasterizer_Input] = { .Index = Rasterizer_Input, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE },
     [Rasterizer_Samplers] = { .Index = Rasterizer_Samplers, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_SAMPLER, .UseImmutableSamplers = true },
-    [Rasterizer_Output] = { .Index = Rasterizer_Output, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE }
+    [Rasterizer_Output] = { .Index = Rasterizer_Output, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE },
+    [Rasterizer_PostTransformCache] = { .Index = Rasterizer_PostTransformCache, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER },
 };
 
 ib_ComputePipeline RasterizerCompute;
+
+typedef struct
+{
+    cm4 ProjectionFromWorld;
+    cv2 OutputDimensions;
+    uint64_t MeshAddress;
+    uint32_t IndexCount;
+    uint32_t VertexCount;
+} TriangleCullingParams;
+
+enum
+{
+    TriangleCulling_Params = 0,
+    TriangleCulling_PostTransformCache,
+};
+
+ib_ShaderInputDesc const TriangleCullingInputs[] =
+{
+    [TriangleCulling_Params] = { .Index = TriangleCulling_Params, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER },
+    [TriangleCulling_PostTransformCache] = { .Index = TriangleCulling_PostTransformCache, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER },
+};
+
+ib_ComputePipeline TriangleCullingCompute;
 
 Mesh SphereMesh;
 Mesh PlaneMesh;
@@ -380,6 +403,7 @@ ibr_RenderGraph* beginRenderGraph(ib_Surface* surface)
 
 void loadShaders()
 {
+    compileShader("triangle_culling.hlsl", "triangle_culling.spv", "CS", "compute");
     compileShader("rasterizer.hlsl", "rasterizer.spv", "CS", "compute");
 
     void* rasterizerSpv;
@@ -398,6 +422,25 @@ void loadShaders()
                                 .ShaderInputs =
                                 {
                                     { ib_staticArrayRange(RasterizerInputs) }
+                                }
+                            });
+
+    void* cullingSpv;
+    size_t cullingSpvSize;
+    readWholeFile("../../CompiledAssets/Shaders/triangle_culling.spv", &cullingSpv, &cullingSpvSize);
+    ib_freeComputePipeline(&Core, &TriangleCullingCompute);
+    TriangleCullingCompute = ib_allocComputePipeline(&Core, (ib_ComputePipelineDesc)
+                            {
+                                .ShaderDesc = (ib_ShaderDesc)
+                                {
+                                    .EntryPoint = "CS",
+                                    .Code = cullingSpv,
+                                    .CodeSize = cullingSpvSize,
+                                    .Stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                                },
+                                .ShaderInputs =
+                                {
+                                    { ib_staticArrayRange(TriangleCullingInputs) }
                                 }
                             });
 }
@@ -488,6 +531,7 @@ static void kill(void)
     freeMesh(&PlaneMesh);
     freeMesh(&BoxMesh);
     ib_freeComputePipeline(&Core, &RasterizerCompute);
+    ib_freeComputePipeline(&Core, &TriangleCullingCompute);
     ibr_killDefaultResources(&Core, &DefaultResources);
 
     iba_killTlsfAllocator(&GlobalBufferMemoryAllocator);
@@ -506,15 +550,6 @@ static void update(void)
         ib_beginCommandBuffer(&Core, commands);
         ibr_beginUpload(graph, commands);
 
-        ibr_Resource swapchainResource = ibr_allocPassResource(graph, commands,
-            ibr_textureResourceDesc(graph->SwapchainTexture, VK_IMAGE_LAYOUT_UNDEFINED));
-        ibr_Resource inputTexture = ibr_allocPassResource(graph, commands,
-            ibr_textureResourceDesc(&DefaultResources.Textures[ibr_DefaultTexture_Checkerboard], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
-        ibr_Resource rasterizerParams = ibr_allocPassResource(graph, commands,
-            ibr_transientBufferResourceDesc(sizeof(RasterizerParams), ibr_TransientBufferFlag_Device | ibr_TransientBufferFlag_UniformBufferBit, "RasterizerParams"));
-        ibr_Resource renderOutput = ibr_allocPassResource(graph, commands,
-            ibr_transientTextureResourceDesc(ibr_ScreenExtent, VK_FORMAT_R8G8B8A8_UNORM, ibr_TransientTextureFlag_StorageBit | ibr_TransientTextureFlag_TransferSrcBit, "Render Output"));
-
         static uint64_t currentTime = 0u;
         static float rotation = 0.0f;
 
@@ -525,14 +560,35 @@ static void update(void)
             rotation += deltaTime;
         }
 
-        float aspectRatio = (float)graph->ScreenExtent.width / (float)graph->ScreenExtent.height;
-        cm4 projection = cm4_perspective_projection(tanf(cran_pi / 4.0f), 0.1f, 1000.0f, aspectRatio);
-        cm4 view = cm4_translate((cv3) { 0.0f, 0.0f, 2.0f });
-        cm4 rotate = cm4_mul(cm4_rotate_xz(rotation), cm4_rotate_xy(rotation));
-        cm4 projectionFromWorld = cm4_mul(cm4_mul(projection, view), rotate);
-        ibr_writeResource(graph, commands, &rasterizerParams, (ibr_WriteData)
+        typedef struct
+        {
+            cv4 Verts[3];
+            uint32_t TriangleIndex;
+        } NDCTri;
+        uint32_t triangleCount = SphereMesh.IndexCount / 3;
+        ibr_Resource postTransformCache = ibr_allocPassResource(graph, commands,
+                ibr_transientBufferResourceDesc(sizeof(NDCTri) * triangleCount + sizeof(uint32_t), ibr_TransientBufferFlag_Device | ibr_TransientBufferFlag_StorageBufferBit, "PostTransformCache"));
+
+        ibr_writeResource(graph, commands, &postTransformCache, (ibr_WriteData)
                           {
-                              .Data = &(RasterizerParams)
+                              .Data = &(uint32_t){ 0u },
+                              .Size = sizeof(uint32_t)
+                          });
+
+        // Triangle Culling
+        {
+            ibr_Resource cullingParams = ibr_allocPassResource(graph, commands,
+                ibr_transientBufferResourceDesc(sizeof(TriangleCullingParams), ibr_TransientBufferFlag_Device | ibr_TransientBufferFlag_UniformBufferBit, "CullingParams"));
+
+            float aspectRatio = (float)graph->ScreenExtent.width / (float)graph->ScreenExtent.height;
+            cm4 projection = cm4_perspective_projection(tanf(cran_pi / 4.0f), 0.1f, 1000.0f, aspectRatio);
+            cm4 view = cm4_translate((cv3) { 0.0f, 0.0f, 2.0f });
+            cm4 rotate = cm4_mul(cm4_rotate_xz(rotation), cm4_rotate_xy(rotation));
+            cm4 projectionFromWorld = cm4_mul(cm4_mul(projection, view), rotate);
+
+            ibr_writeResource(graph, commands, &cullingParams, (ibr_WriteData)
+                          {
+                              .Data = &(TriangleCullingParams)
                               {
                                   .OutputDimensions = (cv2) { (float)graph->ScreenExtent.width, (float)graph->ScreenExtent.height },
                                   .MeshAddress = GlobalBufferMemory.DeviceAddress + SphereMesh.Alloc.Offset,
@@ -540,36 +596,89 @@ static void update(void)
                                   .VertexCount = SphereMesh.VertexCount,
                                   .ProjectionFromWorld = projectionFromWorld,
                               },
-                              .Size = sizeof(RasterizerParams)
+                              .Size = sizeof(TriangleCullingParams)
                           });
 
-        ibr_beginComputePass(graph, commands, (ibr_BeginComputePassDesc)
-                              {
-                                  .ResourceStates =
-                                  {
-                                      ibr_textureState(&renderOutput, ibr_TextureState_ReadWrite, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
-                                      ibr_textureState(&inputTexture, ibr_TextureState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
-                                      ibr_bufferState(&rasterizerParams, ibr_BufferState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
-                                  },
-                                  .PassName = "Rasterizer"
-                              });
-
-        ib_ShaderInput rasterizerInput = ibr_resourcesToShaderInput(graph, (ibr_ResourceToShaderInputDesc)
+            ib_ShaderInput cullingInput = ibr_resourcesToShaderInput(graph, (ibr_ResourceToShaderInputDesc)
                                    {
-                                       .Layout = &RasterizerCompute.InlineShaderInputLayouts[0],
-                                       .ShaderInputs = ib_staticArrayRange(RasterizerInputs),
+                                       .Layout = &TriangleCullingCompute.InlineShaderInputLayouts[0],
+                                       .ShaderInputs = ib_staticArrayRange(TriangleCullingInputs),
                                        .Resources = ib_staticArrayRange((ibr_Resource*[])
                                        {
-                                           [Rasterizer_Params] = &rasterizerParams,
-                                           [Rasterizer_Input] = &inputTexture,
-                                           [Rasterizer_Output] = &renderOutput
+                                           [TriangleCulling_Params] = &cullingParams,
+                                           [TriangleCulling_PostTransformCache] = &postTransformCache,
                                        })
                                    });
 
-        ib_bindShaderInputToCompute(commands, &RasterizerCompute, &rasterizerInput);
-        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, RasterizerCompute.VulkanPipeline);
-        vkCmdDispatch(commands, cu_div_ceil(graph->ScreenExtent.width, 8u), cu_div_ceil(graph->ScreenExtent.height, 8u), 1u);
-        ibr_endComputePass(graph, commands);
+            ibr_beginComputePass(graph, commands, (ibr_BeginComputePassDesc)
+                                 {
+                                     .ResourceStates =
+                                     {
+                                         ibr_bufferState(&cullingParams, ibr_BufferState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+                                         ibr_bufferState(&postTransformCache, ibr_BufferState_Write, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+                                     },
+                                     .PassName = "TriangleCulling"
+                                 });
+            ib_bindShaderInputToCompute(commands, &TriangleCullingCompute, &cullingInput);
+            vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, TriangleCullingCompute.VulkanPipeline);
+            vkCmdDispatch(commands, cu_div_ceil(triangleCount, 64u), 1u, 1u);
+            ibr_endComputePass(graph, commands);
+        }
+
+        ibr_Resource swapchainResource = ibr_allocPassResource(graph, commands,
+            ibr_textureResourceDesc(graph->SwapchainTexture, VK_IMAGE_LAYOUT_UNDEFINED));
+        ibr_Resource inputTexture = ibr_allocPassResource(graph, commands,
+            ibr_textureResourceDesc(&DefaultResources.Textures[ibr_DefaultTexture_Checkerboard], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+        ibr_Resource renderOutput = ibr_allocPassResource(graph, commands,
+            ibr_transientTextureResourceDesc(ibr_ScreenExtent, VK_FORMAT_R8G8B8A8_UNORM, ibr_TransientTextureFlag_StorageBit | ibr_TransientTextureFlag_TransferSrcBit, "Render Output"));
+
+        // Rasterize
+        {
+            ibr_Resource rasterizerParams = ibr_allocPassResource(graph, commands,
+                                                                  ibr_transientBufferResourceDesc(sizeof(RasterizerParams), ibr_TransientBufferFlag_Device | ibr_TransientBufferFlag_UniformBufferBit, "RasterizerParams"));
+
+            ibr_writeResource(graph, commands, &rasterizerParams, (ibr_WriteData)
+                              {
+                                  .Data = &(RasterizerParams)
+                                  {
+                                      .OutputDimensions = (cv2) { (float)graph->ScreenExtent.width, (float)graph->ScreenExtent.height },
+                                      .MeshAddress = GlobalBufferMemory.DeviceAddress + SphereMesh.Alloc.Offset,
+                                      .IndexCount = SphereMesh.IndexCount,
+                                      .VertexCount = SphereMesh.VertexCount,
+                                  },
+                                  .Size = sizeof(RasterizerParams)
+                              });
+
+            ibr_beginComputePass(graph, commands, (ibr_BeginComputePassDesc)
+                                 {
+                                     .ResourceStates =
+                                     {
+                                         ibr_textureState(&renderOutput, ibr_TextureState_ReadWrite, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+                                         ibr_textureState(&inputTexture, ibr_TextureState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+                                         ibr_bufferState(&rasterizerParams, ibr_BufferState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+                                         ibr_bufferState(&postTransformCache, ibr_BufferState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+                                     },
+                                     .PassName = "Rasterizer"
+                                 });
+
+            ib_ShaderInput rasterizerInput = ibr_resourcesToShaderInput(graph, (ibr_ResourceToShaderInputDesc)
+                                                                        {
+                                                                            .Layout = &RasterizerCompute.InlineShaderInputLayouts[0],
+                                                                            .ShaderInputs = ib_staticArrayRange(RasterizerInputs),
+                                                                            .Resources = ib_staticArrayRange((ibr_Resource*[])
+                                                                                                             {
+                                                                                                                 [Rasterizer_Params] = &rasterizerParams,
+                                                                                                                 [Rasterizer_Input] = &inputTexture,
+                                                                                                                 [Rasterizer_Output] = &renderOutput,
+                                                                                                                 [Rasterizer_PostTransformCache] = &postTransformCache
+                                                                                                             })
+                                                                        });
+
+            ib_bindShaderInputToCompute(commands, &RasterizerCompute, &rasterizerInput);
+            vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, RasterizerCompute.VulkanPipeline);
+            vkCmdDispatch(commands, cu_div_ceil(graph->ScreenExtent.width, 8u), cu_div_ceil(graph->ScreenExtent.height, 8u), 1u);
+            ibr_endComputePass(graph, commands);
+        }
 
         ibr_beginTransferPass(graph, commands, (ibr_BeginTransferPassDesc)
                              {

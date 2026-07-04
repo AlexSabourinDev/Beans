@@ -1,0 +1,10 @@
+#ifndef RASTERIZER_HSH
+#define RASTERIZER_HSH
+
+struct NDCTri
+{
+    float4 Verts[3];
+    uint TriangleIndex;
+};
+
+#endif // RASTERIZER_HSH

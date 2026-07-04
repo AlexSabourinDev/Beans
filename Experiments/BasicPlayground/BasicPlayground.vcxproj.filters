@@ -189,5 +189,11 @@
       <Filter>Iceberg\Shaders</Filter>
     </FxCompile>
     <FxCompile Include="..\Assets\Shaders\rasterizer.hlsl" />
+    <FxCompile Include="..\Assets\Shaders\triangle_culling.hlsl" />
+    <FxCompile Include="..\Assets\Shaders\mesh_bindless.hsh" />
+    <FxCompile Include="..\Assets\Shaders\rasterizer.hsh" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\Assets\compile_shaders.py" />
   </ItemGroup>
 </Project>

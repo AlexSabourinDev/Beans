@@ -122,6 +122,11 @@ typedef struct
 	c16i x, y, z;
 } c16i3;
 
+typedef struct 
+{
+	c16u x, y, z;
+} c16u3;
+
 typedef union
 {
 	struct

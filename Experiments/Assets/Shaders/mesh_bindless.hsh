@@ -1,0 +1,45 @@
+#ifndef MESH_BINDLESS_HSH
+#define MESH_BINDLESS_HSH
+
+template<int C>
+vector<float, C> toFloatingPoint(vector<float, C> fixedPoint, float fractionalBits)
+{
+    return fixedPoint / exp2(fractionalBits);
+}
+
+uint16_t3 loadTriangle(uint64_t meshAddress, uint index)
+{
+    return vk::RawBufferLoad<uint16_t3>(meshAddress + index * sizeof(uint16_t3));
+}
+
+float3 loadVertexPos(uint64_t meshAddress, uint indexCount, uint vertexIndex)
+{
+    uint indexOffset = indexCount * sizeof(uint16_t);
+    int16_t3 packedPos = vk::RawBufferLoad<int16_t3>(meshAddress + indexOffset + vertexIndex * sizeof(uint16_t3));
+
+    return toFloatingPoint((float3)packedPos, 7.0f);
+}
+
+float2 loadNormalOct(uint64_t meshAddress, uint indexCount, uint vertexCount, uint vertexIndex)
+{
+    uint indexOffset = indexCount * sizeof(uint16_t);
+    uint positionOffset = vertexCount * sizeof(int16_t3);
+    uint readOffset = indexOffset + positionOffset;
+    uint16_t2 packedOct = vk::RawBufferLoad<uint16_t2>(meshAddress + readOffset + vertexIndex * sizeof(uint16_t2));
+    return toFloatingPoint((float2)packedOct, 15.0f);
+}
+
+float2 loadUV(uint64_t meshAddress, uint indexCount, uint vertexCount, uint vertexIndex)
+{
+    uint indexOffset = indexCount * sizeof(uint16_t);
+    uint positionOffset = vertexCount * sizeof(int16_t3);
+    uint normalOffset = vertexCount * sizeof(int16_t2);
+    uint readOffset = indexOffset + positionOffset + normalOffset;
+
+    uint32_t alignementMask = sizeof(float) - 1;
+    readOffset = (readOffset + alignementMask) & ~alignementMask;
+
+    return vk::RawBufferLoad<float2>(meshAddress + readOffset + vertexIndex * sizeof(float2));
+}
+
+#endif // MESH_BINDLESS_HSH
