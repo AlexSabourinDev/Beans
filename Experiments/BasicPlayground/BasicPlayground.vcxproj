@@ -150,7 +150,7 @@
     <FxCompile Include="..\..\Iceberg\Shaders\ib_spherical_harmonics.hsh">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </FxCompile>
-    <FxCompile Include="..\..\Iceberg\Shaders\vulkan.hsh">
+    <FxCompile Include="ib_vulkan.hsh">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </FxCompile>
     <FxCompile Include="..\Assets\Shaders\mesh_bindless.hsh">

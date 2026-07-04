@@ -1,7 +1,7 @@
 #include "ib_sampler.hsh"
 #include "ib_encodings.hsh"
 #include "ib_math.hsh"
-#include "vulkan.hsh"
+#include "ib_vulkan.hsh"
 #include "rasterizer.hsh"
 #include "mesh_bindless.hsh"
 
