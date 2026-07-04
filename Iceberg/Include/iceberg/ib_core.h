@@ -228,7 +228,6 @@ void ib_rebuildSurface(ib_Core* core, ib_Surface* surface);
 // Graphics pipeline
 typedef struct
 {
-    uint32_t Index;
     VkShaderStageFlags Shaders;
     VkDescriptorType Type;
     uint32_t ArraySize;
@@ -269,6 +268,7 @@ typedef struct
 typedef struct
 {
     ib_ShaderInputDesc const* Desc;
+    uint32_t BindingIndex;
 
     // Write to the appropriate member
     uint32_t ArrayIndex;

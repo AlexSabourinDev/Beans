@@ -351,11 +351,11 @@ enum
 
 ib_ShaderInputDesc const RasterizerInputs[] =
 {
-    [Rasterizer_Params] = { .Index = Rasterizer_Params, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER },
-    [Rasterizer_Input] = { .Index = Rasterizer_Input, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE },
-    [Rasterizer_Samplers] = { .Index = Rasterizer_Samplers, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_SAMPLER, .UseImmutableSamplers = true },
-    [Rasterizer_Output] = { .Index = Rasterizer_Output, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE },
-    [Rasterizer_PostTransformCache] = { .Index = Rasterizer_PostTransformCache, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER },
+    [Rasterizer_Params] = { .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER },
+    [Rasterizer_Input] = { .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE },
+    [Rasterizer_Samplers] = { .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_SAMPLER, .UseImmutableSamplers = true },
+    [Rasterizer_Output] = { .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE },
+    [Rasterizer_PostTransformCache] = { .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER },
 };
 
 ib_ComputePipeline RasterizerCompute;
@@ -377,8 +377,8 @@ enum
 
 ib_ShaderInputDesc const TriangleCullingInputs[] =
 {
-    [TriangleCulling_Params] = { .Index = TriangleCulling_Params, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER },
-    [TriangleCulling_PostTransformCache] = { .Index = TriangleCulling_PostTransformCache, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER },
+    [TriangleCulling_Params] = { .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER },
+    [TriangleCulling_PostTransformCache] = { .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER },
 };
 
 ib_ComputePipeline TriangleCullingCompute;

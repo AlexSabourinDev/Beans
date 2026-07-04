@@ -64,7 +64,7 @@ int main()
 
     static ib_ShaderInputDesc const computeInputs[] =
     {
-        { .Index = 0, .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER },
+        { .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER },
     };
 
     void* computeSpv;

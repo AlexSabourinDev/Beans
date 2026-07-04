@@ -850,8 +850,7 @@ ib_ShaderInput ibr_resourcesToShaderInput(ibr_RenderGraph* graph, ibr_ResourceTo
 		ibr_Resource* resource = desc.Resources.Data[i];
 		if (resource != NULL) // resource array is allowed to be sparse. Just pass in the resources you care about at the right indices.
 		{
-			ib_ShaderInputWrite inputWrite = { .Desc = &desc.ShaderInputs.Data[i] };
-			ib_assert(inputWrite.Desc->Index == i); // We're expecting our shader input index to match their in-array location.
+			ib_ShaderInputWrite inputWrite = { .Desc = &desc.ShaderInputs.Data[i], i };
 			if (resource->Type == ibr_ResourceType_Texture)
 			{
 				inputWrite.TextureInput = (ib_ShaderInputWriteTexture) { resource->Texture, resource->TextureLayout };

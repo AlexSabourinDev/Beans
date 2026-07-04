@@ -1574,7 +1574,7 @@ void ib_writeToShaderInput(ib_Core* core, ib_WriteToShaderInputDesc desc)
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .dstSet = desc.ShaderInput->DescriptorSet,
             .descriptorType = desc.Inputs.Data[i].Desc->Type,
-            .dstBinding = desc.Inputs.Data[i].Desc->Index,
+            .dstBinding = desc.Inputs.Data[i].BindingIndex,
             .descriptorCount = 1, // TODO: Support multiple array writes
             .dstArrayElement = desc.Inputs.Data[i].ArrayIndex
         };
