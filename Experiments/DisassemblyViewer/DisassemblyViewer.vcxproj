@@ -93,7 +93,7 @@
     <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_core.c" />
     <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_rendergraph.c" />
     <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_util.c" />
-    <ClCompile Include="ib_imgui.cpp" />
+    <ClCompile Include="..\Shared\ib_imgui.cpp" />
     <ClCompile Include="main.c" />
   </ItemGroup>
   <ItemGroup>
@@ -112,7 +112,7 @@
     <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_rendergraph.h" />
     <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_util.h" />
     <ClInclude Include="..\..\Sokol\Include\sokol\sokol_app.h" />
-    <ClInclude Include="ib_imgui.h" />
+    <ClInclude Include="..\Shared\ib_imgui.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

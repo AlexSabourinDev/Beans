@@ -8,6 +8,9 @@
 #include <iceberg/ib_core.h>
 #include <iceberg/ib_rendergraph.h>
 
+#include "../Shared/ib_imgui.h"
+#include <cimgui.h>
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stddef.h>
@@ -499,6 +502,8 @@ static void init(void)
 
     loadShaders();
 
+    imgui_init(&Core, Surface.Format.format);
+
     // Spin up a graph for GPU-side initialization
     ibr_RenderGraph* graph = beginRenderGraph(NULL);
     if (graph != NULL)
@@ -527,6 +532,9 @@ static void kill(void)
 {
     iba_killStackAllocator(&StackAllocator);
     vkDeviceWaitIdle(Core.LogicalDevice);
+
+    imgui_kill();
+
     freeMesh(&SphereMesh);
     freeMesh(&PlaneMesh);
     freeMesh(&BoxMesh);
@@ -548,6 +556,27 @@ static void update(void)
     ibr_RenderGraph* graph = beginRenderGraph(&Surface); 
     if (graph != NULL)
     {
+        imgui_beginFrame();
+
+        if (igBegin("Main Window", NULL, ImGuiWindowFlags_None))
+        {
+            igCheckbox("Pause Time", &PauseTime);
+
+            if (igButton("Reload Shaders", (ImVec2_c) { 0, 0 }))
+            {
+                vkDeviceWaitIdle(Core.LogicalDevice);
+                loadShaders();
+            }
+
+            for (ibr_TransientScopeTiming* iter = graph->PreviousFrameTimings;
+                iter != NULL;
+                iter = iter->Next)
+            {
+                igLabelText("", "%s: %f", iter->Timing.Name, iter->Timing.Timing);
+            }
+        }
+        igEnd();
+
         VkCommandBuffer commands = ibr_allocTransientCommandBuffer(graph, ib_Queue_Graphics);
         ib_beginCommandBuffer(&Core, commands);
         ibr_beginUpload(graph, commands);
@@ -718,6 +747,9 @@ static void update(void)
                         });
 
         ibr_endTransferPass(graph, commands);
+
+        imgui_endFrame();
+        imgui_render(commands, graph->ScreenExtent, swapchainResource.Texture);
 
         ibr_barriers(graph, commands, (ibr_BarriersDesc)
                      {

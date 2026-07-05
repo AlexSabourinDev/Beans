@@ -447,7 +447,7 @@ bool ibr_beginFrame(ibr_RenderGraph* graph, ibr_BeginFrameDesc desc)
     // Since our allocations live between our allocator reset boundary we need to go from one stack to the next.
     // There's probably a better way to do this.
 #define maxScopeTimings 1024
-    ibr_TransientScopeTiming scopeTimings[maxScopeTimings];
+    ibr_ScopeTiming scopeTimings[maxScopeTimings] = {};
     uint32_t scopeTimingCount = 0;
 #undef maxScopeTimings
 
@@ -462,13 +462,13 @@ bool ibr_beginFrame(ibr_RenderGraph* graph, ibr_BeginFrameDesc desc)
 
         bool isBlocking = false;
         ibr_ProfilingScope* scope = &iter->Scope;
-        ibr_TransientScopeTiming* transientTiming = &scopeTimings[scopeTimingCount++];
-        transientTiming->Timing = (ibr_ScopeTiming)
+        ibr_ScopeTiming* transientTiming = &scopeTimings[scopeTimingCount++];
+        *transientTiming = (ibr_ScopeTiming)
         {
             .Timing = ib_queryTimer(graph->Core, &graph->TimerManager, &scope->Timer, isBlocking),
             .Name = scope->Name,
         };
-        ib_assert(transientTiming->Timing.Timing != ib_TimerQueryNotReady); // We should be ready, our frame's fence was signaled.
+        ib_assert(transientTiming->Timing != ib_TimerQueryNotReady); // We should be ready, our frame's fence was signaled.
     }
     list_clear(&graph->CompletedScopes);
     list_clear(&graph->PreviousFrameTimings);
@@ -484,7 +484,7 @@ bool ibr_beginFrame(ibr_RenderGraph* graph, ibr_BeginFrameDesc desc)
     {
         ibr_TransientScopeTiming* transientTiming;
         list_pushAlloc(transientTiming, ibr_TransientScopeTiming, &graph->PreviousFrameTimings);
-        *transientTiming = scopeTimings[i];
+        transientTiming->Timing = scopeTimings[i];
     }
 
     return true;

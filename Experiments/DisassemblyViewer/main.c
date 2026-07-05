@@ -5,7 +5,7 @@
 #include <iceberg/ib_core.h>
 #include <iceberg/ib_rendergraph.h>
 
-#include "ib_imgui.h"
+#include "../Shared/ib_imgui.h"
 
 #include <stdlib.h>
 #include <stdio.h>

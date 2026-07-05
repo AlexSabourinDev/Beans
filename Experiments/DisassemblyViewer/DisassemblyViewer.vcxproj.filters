@@ -41,7 +41,7 @@
     <ClCompile Include="..\..\cimgui\imgui\backends\imgui_impl_vulkan.cpp">
       <Filter>cimgui\imgui</Filter>
     </ClCompile>
-    <ClCompile Include="ib_imgui.cpp" />
+    <ClCompile Include="..\Shared\ib_imgui.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Iceberg">
@@ -103,6 +103,6 @@
     <ClInclude Include="..\..\cimgui\imgui\backends\imgui_impl_vulkan.h">
       <Filter>cimgui\imgui</Filter>
     </ClInclude>
-    <ClInclude Include="ib_imgui.h" />
+    <ClInclude Include="..\Shared\ib_imgui.h" />
   </ItemGroup>
 </Project>

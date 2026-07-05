@@ -44,6 +44,7 @@
     <Import Project="..\Iceberg.props" />
     <Import Project="..\cgtlf.props" />
     <Import Project="..\cranberries.props" />
+    <Import Project="..\cimgui.props" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -53,6 +54,7 @@
     <Import Project="..\Iceberg.props" />
     <Import Project="..\cgtlf.props" />
     <Import Project="..\cranberries.props" />
+    <Import Project="..\cimgui.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -82,14 +84,34 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\cimgui\cimgui.cpp" />
+    <ClCompile Include="..\..\cimgui\cimgui_impl.cpp" />
+    <ClCompile Include="..\..\cimgui\imgui\backends\imgui_impl_vulkan.cpp" />
+    <ClCompile Include="..\..\cimgui\imgui\backends\imgui_impl_win32.cpp" />
+    <ClCompile Include="..\..\cimgui\imgui\imgui.cpp" />
+    <ClCompile Include="..\..\cimgui\imgui\imgui_demo.cpp" />
+    <ClCompile Include="..\..\cimgui\imgui\imgui_draw.cpp" />
+    <ClCompile Include="..\..\cimgui\imgui\imgui_tables.cpp" />
+    <ClCompile Include="..\..\cimgui\imgui\imgui_widgets.cpp" />
     <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_allocator.c" />
     <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_core.c" />
     <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_rendergraph.c" />
     <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_util.c" />
+    <ClCompile Include="..\Shared\ib_imgui.cpp" />
     <ClCompile Include="main.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\cgltf\Include\cgltf\cgltf.h" />
+    <ClInclude Include="..\..\cimgui\cimgui.h" />
+    <ClInclude Include="..\..\cimgui\cimgui_impl.h" />
+    <ClInclude Include="..\..\cimgui\imgui\backends\imgui_impl_vulkan.h" />
+    <ClInclude Include="..\..\cimgui\imgui\backends\imgui_impl_win32.h" />
+    <ClInclude Include="..\..\cimgui\imgui\imconfig.h" />
+    <ClInclude Include="..\..\cimgui\imgui\imgui.h" />
+    <ClInclude Include="..\..\cimgui\imgui\imgui_internal.h" />
+    <ClInclude Include="..\..\cimgui\imgui\imstb_rectpack.h" />
+    <ClInclude Include="..\..\cimgui\imgui\imstb_textedit.h" />
+    <ClInclude Include="..\..\cimgui\imgui\imstb_truetype.h" />
     <ClInclude Include="..\..\Cranberries\Include\cranberries\cranberry_math.h" />
     <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_allocator.h" />
     <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_core.h" />
@@ -133,6 +155,7 @@
     <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_xcb.h" />
     <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_xlib.h" />
     <ClInclude Include="..\..\VulkanSDK\Include\vulkan\vulkan_xlib_xrandr.h" />
+    <ClInclude Include="..\Shared\ib_imgui.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\..\Iceberg\Shaders\ib_brdf.hsh">
@@ -150,8 +173,12 @@
     <FxCompile Include="..\..\Iceberg\Shaders\ib_spherical_harmonics.hsh">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </FxCompile>
-    <FxCompile Include="ib_vulkan.hsh">
+    <FxCompile Include="..\..\Iceberg\Shaders\vulkan.hsh">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </FxCompile>
+    <FxCompile Include="..\Assets\Shaders\compute_playground.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
     <FxCompile Include="..\Assets\Shaders\mesh_bindless.hsh">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
@@ -169,12 +196,6 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="..\Assets\compile_shaders.py">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </None>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

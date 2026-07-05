@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="main.c" />
@@ -13,6 +13,34 @@
     </ClCompile>
     <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_util.c">
       <Filter>Iceberg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Shared\ib_imgui.cpp" />
+    <ClCompile Include="..\..\cimgui\cimgui.cpp">
+      <Filter>cimgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cimgui\cimgui_impl.cpp">
+      <Filter>cimgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cimgui\imgui\backends\imgui_impl_vulkan.cpp">
+      <Filter>cimgui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cimgui\imgui\backends\imgui_impl_win32.cpp">
+      <Filter>cimgui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cimgui\imgui\imgui.cpp">
+      <Filter>cimgui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cimgui\imgui\imgui_demo.cpp">
+      <Filter>cimgui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cimgui\imgui\imgui_draw.cpp">
+      <Filter>cimgui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cimgui\imgui\imgui_tables.cpp">
+      <Filter>cimgui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cimgui\imgui\imgui_widgets.cpp">
+      <Filter>cimgui\imgui</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -33,6 +61,12 @@
     </Filter>
     <Filter Include="Iceberg\Shaders">
       <UniqueIdentifier>{1c204734-523b-4fb8-b64c-a128a259e527}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="cimgui">
+      <UniqueIdentifier>{2d116625-7335-462b-9a4c-fb64a3123d15}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="cimgui\imgui">
+      <UniqueIdentifier>{fefc9f32-aed9-4616-84b5-6f94c598a98e}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -168,6 +202,37 @@
     <ClInclude Include="..\..\Sokol\Include\sokol\sokol_time.h">
       <Filter>Sokol</Filter>
     </ClInclude>
+    <ClInclude Include="..\Shared\ib_imgui.h" />
+    <ClInclude Include="..\..\cimgui\cimgui.h">
+      <Filter>cimgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\cimgui_impl.h">
+      <Filter>cimgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\imgui\backends\imgui_impl_vulkan.h">
+      <Filter>cimgui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\imgui\backends\imgui_impl_win32.h">
+      <Filter>cimgui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\imgui\imconfig.h">
+      <Filter>cimgui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\imgui\imgui.h">
+      <Filter>cimgui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\imgui\imgui_internal.h">
+      <Filter>cimgui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\imgui\imstb_rectpack.h">
+      <Filter>cimgui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\imgui\imstb_textedit.h">
+      <Filter>cimgui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\imgui\imstb_truetype.h">
+      <Filter>cimgui\imgui</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\..\Iceberg\Shaders\ib_brdf.hsh">
@@ -185,15 +250,13 @@
     <FxCompile Include="..\..\Iceberg\Shaders\ib_spherical_harmonics.hsh">
       <Filter>Iceberg\Shaders</Filter>
     </FxCompile>
-    <FxCompile Include="ib_vulkan.hsh">
+    <FxCompile Include="..\..\Iceberg\Shaders\vulkan.hsh">
       <Filter>Iceberg\Shaders</Filter>
     </FxCompile>
     <FxCompile Include="..\Assets\Shaders\rasterizer.hlsl" />
-    <FxCompile Include="..\Assets\Shaders\triangle_culling.hlsl" />
+    <FxCompile Include="..\Assets\Shaders\compute_playground.hlsl" />
     <FxCompile Include="..\Assets\Shaders\mesh_bindless.hsh" />
     <FxCompile Include="..\Assets\Shaders\rasterizer.hsh" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="..\Assets\compile_shaders.py" />
+    <FxCompile Include="..\Assets\Shaders\triangle_culling.hlsl" />
   </ItemGroup>
 </Project>
