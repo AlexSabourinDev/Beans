@@ -69,9 +69,19 @@ uint64_t stackAlloc(uint64_t stackAddress, uint size)
 
 static uint const ThreadGroupX = 64u;
 
+groupshared NDCTri PostTransformCache[ThreadGroupX];
+groupshared uint PostTransformCacheCount;
+groupshared uint64_t StackWriteAddress;
+
 [numthreads(ThreadGroupX, 1, 1)]
-void CS(uint dispatchThreadId : SV_DispatchThreadId, uint groupIndex : SV_GroupIndex)
+void CS(uint dispatchThreadId : SV_DispatchThreadId, uint groupThreadIndex : SV_GroupIndex)
 {
+    if (groupThreadIndex == 0)
+    {
+        PostTransformCacheCount = 0u;
+    }
+    GroupMemoryBarrierWithGroupSync();
+
     uint triIndex = dispatchThreadId;
     if (triIndex * 3 < Params.IndexCount)
     {
@@ -92,10 +102,6 @@ void CS(uint dispatchThreadId : SV_DispatchThreadId, uint groupIndex : SV_GroupI
         bool frontfacing = (v1ToV0.x * v2ToV0.y)-(v1ToV0.y * v2ToV0.x) > 0.0f;
         if (frontfacing)
         {
-            // TODO: Use groupshared as primary backing,
-            // Then flush to global memory.
-            uint64_t writeAddress = stackAlloc(Params.StackAddress, sizeof(NDCTri));
-
             NDCTri ndcTri = (NDCTri)0;
             for (uint i = 0; i < 3; i++)
             {
@@ -103,7 +109,32 @@ void CS(uint dispatchThreadId : SV_DispatchThreadId, uint groupIndex : SV_GroupI
             }
             ndcTri.TriangleIndex = triIndex;
 
-            vk::RawBufferStore(writeAddress, ndcTri);
+            uint activeWaveCount = WaveActiveCountBits(true);
+            uint waveWriteIndex;
+            if (WaveIsFirstLane())
+            {
+                InterlockedAdd(PostTransformCacheCount, activeWaveCount, waveWriteIndex);
+            }
+            waveWriteIndex = WaveReadLaneFirst(waveWriteIndex);
+            uint laneWriteIndex = waveWriteIndex + WavePrefixCountBits(true);
+
+            PostTransformCache[laneWriteIndex] = ndcTri;
+        }
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+    if (PostTransformCacheCount > 0)
+    {
+        if (groupThreadIndex == 0)
+        {
+            StackWriteAddress = stackAlloc(Params.StackAddress, PostTransformCacheCount * sizeof(NDCTri));
+        }
+        GroupMemoryBarrierWithGroupSync();
+
+        for (uint i = WaveGetLaneIndex(); i < PostTransformCacheCount; i += WaveGetLaneCount())
+        {
+            NDCTri ndcTri = PostTransformCache[i];
+            vk::RawBufferStore(StackWriteAddress + i * sizeof(NDCTri), ndcTri);
         }
     }
 }
