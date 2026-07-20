@@ -11,8 +11,8 @@ static uint const RasterBatchSize = 16;
 struct RasterBatch
 {
     uint TriangleIndices[RasterBatchSize];
+    uint Next;
     uint TriangleCount;
-    vk::BufferPointer<RasterBatch> Next;
 };
 
 #endif // RASTERIZER_HSH

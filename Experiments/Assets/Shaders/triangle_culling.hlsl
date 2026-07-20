@@ -1,5 +1,8 @@
 #include "mesh_bindless.hsh"
 #include "rasterizer.hsh"
+#include "ib_math.hsh"
+
+#define DEBUG_ALLOCATIONS
 
 struct CullingParams
 {
@@ -7,6 +10,9 @@ struct CullingParams
     float2 OutputDimensions;
     uint64_t MeshAddress;
     uint64_t StackAddress;
+    uint64_t RasterTileAddress; // TODO CPU
+    uint2 TileCount; // TODO CPU
+    float2 InvTileDims; // TODO CPU
     uint IndexCount;
     uint VertexCount;
 };
@@ -58,20 +64,88 @@ float2 roundToFixedPoint(float2 value)
 
 [[vk::binding(0)]] ConstantBuffer<CullingParams> Params;
 
-uint64_t stackAlloc(uint64_t stackAddress, uint size)
+uint stackAlloc(uint64_t stackAddress, uint size, uint alignment)
 {
     vk::BufferPointer<uint> stack = vk::BufferPointer<uint>(stackAddress);
     uint stackOffset;
-    InterlockedAdd(stack.Get(), size, stackOffset);
+    InterlockedAdd(stack.Get(), size + alignment - 1, stackOffset);
 
-    return stackAddress + stackOffset + sizeof(uint);
+    uint allocOffset = stackOffset + sizeof(uint);
+
+    uint alignmentMask = (alignment - 1);
+    allocOffset = (allocOffset + alignmentMask) & (~alignmentMask);
+    return allocOffset;
+}
+
+#ifdef DEBUG_ALLOCATIONS
+groupshared uint DebugOverAllocationSize;
+#endif // DEBUG_ALLOCATIONS
+
+void writeToRasterTile(uint2 tile, uint triIndex)
+{
+    uint linearTileIndex = tile.y * Params.TileCount.x + tile.x;
+    vk::BufferPointer<uint> rasterBatchHeadOffsetPtr = vk::BufferPointer<uint>(Params.RasterTileAddress + linearTileIndex * sizeof(uint));
+
+    [loop]
+    while (true)
+    {
+        uint currentRasterBatchHeadOffset = rasterBatchHeadOffsetPtr.Get();
+        [branch]
+        if (currentRasterBatchHeadOffset != 0)
+        {
+            vk::BufferPointer<RasterBatch> rasterBatchHeadPtr = vk::BufferPointer<RasterBatch>(Params.StackAddress + currentRasterBatchHeadOffset);
+
+            uint writeIndex;
+            InterlockedAdd(rasterBatchHeadPtr.Get().TriangleCount, 1u, writeIndex);
+
+            [branch]
+            if (writeIndex < RasterBatchSize)
+            {
+                rasterBatchHeadPtr.Get().TriangleIndices[writeIndex] = triIndex;
+                break;
+            }
+        }
+
+        // Scalarization loop to avoid allocating too much in our stack allocator. Yay!
+        [loop]
+        while (true)
+        {
+            uint scalarTileIndex = WaveReadLaneFirst(linearTileIndex);
+            [branch]
+            if (linearTileIndex == scalarTileIndex)
+            {
+                // Only allocate a batch through a single lane.
+                [branch]
+                if (WaveIsFirstLane())
+                {
+                    // TODO: Measure excessive stack allocations.
+                    uint nextBatchOffset = stackAlloc(Params.StackAddress, sizeof(RasterBatch), sizeof(uint));
+                    vk::BufferPointer<RasterBatch> nextBatch = vk::BufferPointer<RasterBatch>(Params.StackAddress + nextBatchOffset);
+
+                    nextBatch.Get().Next = currentRasterBatchHeadOffset;
+                    nextBatch.Get().TriangleCount = 0u;
+
+                    uint originalValue;
+                    InterlockedCompareExchange(rasterBatchHeadOffsetPtr.Get(), currentRasterBatchHeadOffset, nextBatchOffset, originalValue);
+
+#ifdef DEBUG_ALLOCATIONS
+                    if (originalValue != currentRasterBatchHeadOffset)
+                    {
+                        DebugOverAllocationSize += sizeof(RasterBatch);
+                    }
+#endif // DEBUG_ALLOCATIONS
+                }
+                break;
+            }
+        }
+    }
 }
 
 static uint const ThreadGroupX = 64u;
 
 groupshared NDCTri PostTransformCache[ThreadGroupX];
 groupshared uint PostTransformCacheCount;
-groupshared uint64_t StackWriteAddress;
+groupshared uint StackWriteOffset;
 
 [numthreads(ThreadGroupX, 1, 1)]
 void CS(uint dispatchThreadId : SV_DispatchThreadId, uint groupThreadIndex : SV_GroupIndex)
@@ -79,6 +153,9 @@ void CS(uint dispatchThreadId : SV_DispatchThreadId, uint groupThreadIndex : SV_
     if (groupThreadIndex == 0)
     {
         PostTransformCacheCount = 0u;
+#ifdef DEBUG_ALLOCATIONS
+        DebugOverAllocationSize = 0u;
+#endif // DEBUG_ALLOCATIONS
     }
     GroupMemoryBarrierWithGroupSync();
 
@@ -127,14 +204,43 @@ void CS(uint dispatchThreadId : SV_DispatchThreadId, uint groupThreadIndex : SV_
     {
         if (groupThreadIndex == 0)
         {
-            StackWriteAddress = stackAlloc(Params.StackAddress, PostTransformCacheCount * sizeof(NDCTri));
+            StackWriteOffset = stackAlloc(Params.StackAddress, PostTransformCacheCount * sizeof(NDCTri));
         }
         GroupMemoryBarrierWithGroupSync();
 
         for (uint i = WaveGetLaneIndex(); i < PostTransformCacheCount; i += WaveGetLaneCount())
         {
             NDCTri ndcTri = PostTransformCache[i];
-            vk::RawBufferStore(StackWriteAddress + i * sizeof(NDCTri), ndcTri);
+            uint stackOffset = StackWriteOffset + i * sizeof(NDCTri);
+            vk::RawBufferStore(Params.StackAddress + stackOffset, ndcTri);
+
+            // TODO: We can probably figure out the covering tiles in a more efficient way :thinking:
+            float2 triAABBMin = float2(FltMax, FltMax);
+            float2 triAABBMax = float2(-FltMax, -FltMax);
+            for (uint i = 0; i < 3; i++)
+            {
+                triAABBMin = min(triAABBMin, ndcTri.Verts[i].xy);
+                triAABBMax = max(triAABBMax, ndcTri.Verts[i].xy);
+            }
+
+            float2 tileMin = floor(triAABBMin * Params.InvTileDims);
+            float2 tileMax = ceil(triAABBMax * Params.InvTileDims);
+
+            for (float y = tileMin.y; y <= tileMax.y; y += 1.0f)
+            {
+                for (float x = tileMin.x; x <= tileMax.x; x += 1.0f)
+                {
+                    writeToRasterTile(uint2((uint)x, (uint)y), stackOffset);
+                }
+            }
+            
         }
     }
+
+#ifdef DEBUG_ALLOCATIONS
+    if (groupThreadIndex == 0 && DebugOverAllocationSize > 0)
+    {
+        printf("Group over allocated: %u.", DebugOverAllocationSize);
+    }
+#endif // DEBUG_ALLOCATIONS
 }

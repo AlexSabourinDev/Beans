@@ -340,6 +340,7 @@ typedef struct
     cv2 OutputDimensions;
     uint64_t MeshAddress;
     uint64_t StackAddress;
+    uint64_t RasterTileAddress;
     uint32_t IndexCount;
     uint32_t VertexCount;
 } RasterizerParams;
@@ -368,6 +369,9 @@ typedef struct
     cv2 OutputDimensions;
     uint64_t MeshAddress;
     uint64_t StackAddress;
+    uint64_t RasterTileAddress;
+    cu2 TileCount;
+    cv2 InvTileDims;
     uint32_t IndexCount;
     uint32_t VertexCount;
 } TriangleCullingParams;
@@ -596,12 +600,31 @@ static void update(void)
         } NDCTri;
         uint32_t triangleCount = SphereMesh.IndexCount / 3;
         ibr_Resource gpuStack = ibr_allocPassResource(graph, commands,
-                ibr_transientBufferResourceDesc(sizeof(NDCTri) * triangleCount + sizeof(uint32_t), ibr_TransientBufferFlag_Device | ibr_TransientBufferFlag_StorageBufferBit, "PostTransformCache"));
+                ibr_transientBufferResourceDesc(1024u * 1024u, ibr_TransientBufferFlag_Device | ibr_TransientBufferFlag_StorageBufferBit, "GPUStack"));
 
         ibr_writeResource(graph, commands, &gpuStack, (ibr_WriteData)
                           {
                               .Data = &(uint32_t){ 0u },
                               .Size = sizeof(uint32_t)
+                          });
+
+
+        cu2 rasterTileCount =
+        {
+            // TODO: Reference shader dimensions
+            cu_div_ceil(graph->ScreenExtent.width, 8u), cu_div_ceil(graph->ScreenExtent.height, 8u)
+        };
+
+        size_t rasterBatchPtrSize = sizeof(uint32_t) * rasterTileCount.x * rasterTileCount.y;
+        ibr_Resource rasterBatches = ibr_allocPassResource(graph, commands,
+                ibr_transientBufferResourceDesc(rasterBatchPtrSize, ibr_TransientBufferFlag_Device | ibr_TransientBufferFlag_StorageBufferBit, "RasterBatches"));
+        
+        uint64_t* rasterBatchData = (uint32_t*)transientAlloc(rasterBatchPtrSize, sizeof(uint32_t));
+        memset(rasterBatchData, 0u, rasterBatchPtrSize);
+        ibr_writeResource(graph, commands, &rasterBatches, (ibr_WriteData)
+                          {
+                              .Data = rasterBatchData,
+                              .Size = rasterBatchPtrSize
                           });
 
         // Triangle Culling
@@ -622,6 +645,9 @@ static void update(void)
                                   .OutputDimensions = (cv2) { (float)graph->ScreenExtent.width, (float)graph->ScreenExtent.height },
                                   .MeshAddress = GlobalBufferMemory.DeviceAddress + SphereMesh.Alloc.Offset,
                                   .StackAddress = gpuStack.Buffer->DeviceAddress,
+                                  .RasterTileAddress = rasterBatches.Buffer->DeviceAddress,
+                                  .TileCount = rasterTileCount,
+                                  .InvTileDims = (cv2){1.0f / 8.0f, 1.0f / 8.0f },
                                   .IndexCount = SphereMesh.IndexCount,
                                   .VertexCount = SphereMesh.VertexCount,
                                   .ProjectionFromWorld = projectionFromWorld,
@@ -645,6 +671,7 @@ static void update(void)
                                      {
                                          ibr_bufferState(&cullingParams, ibr_BufferState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
                                          ibr_bufferState(&gpuStack, ibr_BufferState_ReadWrite, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+                                         ibr_bufferState(&rasterBatches, ibr_BufferState_ReadWrite, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
                                      },
                                      .PassName = "TriangleCulling"
                                  });
@@ -673,6 +700,7 @@ static void update(void)
                                       .OutputDimensions = (cv2) { (float)graph->ScreenExtent.width, (float)graph->ScreenExtent.height },
                                       .MeshAddress = GlobalBufferMemory.DeviceAddress + SphereMesh.Alloc.Offset,
                                       .StackAddress = gpuStack.Buffer->DeviceAddress,
+                                      .RasterTileAddress = rasterBatches.Buffer->DeviceAddress,
                                       .IndexCount = SphereMesh.IndexCount,
                                       .VertexCount = SphereMesh.VertexCount,
                                   },
@@ -687,6 +715,7 @@ static void update(void)
                                          ibr_textureState(&inputTexture, ibr_TextureState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
                                          ibr_bufferState(&rasterizerParams, ibr_BufferState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
                                          ibr_bufferState(&gpuStack, ibr_BufferState_ReadWrite, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+                                         ibr_bufferState(&rasterBatches, ibr_BufferState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
                                      },
                                      .PassName = "Rasterizer"
                                  });
@@ -705,7 +734,7 @@ static void update(void)
 
             ib_bindShaderInputToCompute(commands, &RasterizerCompute, &rasterizerInput);
             vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, RasterizerCompute.VulkanPipeline);
-            vkCmdDispatch(commands, cu_div_ceil(graph->ScreenExtent.width, 8u), cu_div_ceil(graph->ScreenExtent.height, 8u), 1u);
+            vkCmdDispatch(commands, rasterTileCount.x, rasterTileCount.y, 1u);
             ibr_endComputePass(graph, commands);
         }
 

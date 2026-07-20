@@ -13,6 +13,7 @@ struct RasterizerParams
     float2 OutputDimensions;
     uint64_t MeshAddress;
     uint64_t StackAddress;
+    uint64_t RasterTileAddress;
     uint IndexCount;
     uint VertexCount;
 };
@@ -72,52 +73,62 @@ void CS(uint2 dispatchThreadId : SV_DispatchThreadId, uint groupIndex : SV_Group
 
     float2 pixCoord = (float2)dispatchThreadId + 0.5f;
 
-    // TODO: Fix
-    uint triangleCount = vk::RawBufferLoad<uint>(Params.StackAddress) / sizeof(NDCTri);
-    for (uint triIndex = 0u; triIndex < triangleCount; triIndex++)
+    uint linearTileIndex = groupID.y * ThreadgroupCount().x + groupID.x;
+    vk::BufferPointer<uint> rasterBatchOffsetPtr = vk::BufferPointer<uint>(Params.RasterTileAddress + linearTileIndex * sizeof(uint));
+
+    uint rasterBatchOffset = rasterBatchOffsetPtr.Get();
+    while (rasterBatchOffset != 0)
     {
-        uint writeOffset = sizeof(uint);
-        NDCTri tri = vk::RawBufferLoad<NDCTri>(Params.StackAddress + writeOffset + triIndex * sizeof(NDCTri));
+        vk::BufferPointer<RasterBatch> rasterBatch = vk::BufferPointer<RasterBatch>(Params.StackAddress + rasterBatchOffset);
 
-        float e0 = ccwEdgeFunction(pixCoord, tri.Verts[1].xy, tri.Verts[0].xy);
-        float e1 = ccwEdgeFunction(pixCoord, tri.Verts[2].xy, tri.Verts[1].xy);
-        float e2 = ccwEdgeFunction(pixCoord, tri.Verts[0].xy, tri.Verts[2].xy);
-
-        // https://fgiesen.wordpress.com/2013/02/08/triangle-rasterization-in-practice/
-        // TODO: Can we apply a bias here like suggested in the link above?
-        // How do we simplify this expression?
-        bool topLeft0 = (e0 == 0.0f) && isCCWTopLeftEdge(tri.Verts[1].xy, tri.Verts[0].xy);
-        bool topLeft1 = (e1 == 0.0f) && isCCWTopLeftEdge(tri.Verts[2].xy, tri.Verts[1].xy);
-        bool topLeft2 = (e2 == 0.0f) && isCCWTopLeftEdge(tri.Verts[0].xy, tri.Verts[2].xy);
-
-        if ((e0 > 0.0f || topLeft0)
-            && (e1 > 0.0f || topLeft1)
-            && (e2 > 0.0f || topLeft2))
+        uint triangleCount = min(RasterBatchSize, rasterBatch.Get().TriangleCount);
+        for (uint triIndex = 0u; triIndex < triangleCount; triIndex++)
         {
-            float totalArea = e0 + e1 + e2;
-            float3 screenBarycentrics = { e1 / totalArea, e2 / totalArea, e0 / totalArea };
-            float sampleDepth = dot(float3(tri.Verts[0].z, tri.Verts[1].z, tri.Verts[2].z), screenBarycentrics);
+            uint triangleOffset = rasterBatch.Get().TriangleIndices[triIndex];
+            NDCTri tri = vk::RawBufferLoad<NDCTri>(Params.StackAddress + triangleOffset);
 
-            if (sampleDepth < pixDepth && sampleDepth >= 0.0f)
+            float e0 = ccwEdgeFunction(pixCoord, tri.Verts[1].xy, tri.Verts[0].xy);
+            float e1 = ccwEdgeFunction(pixCoord, tri.Verts[2].xy, tri.Verts[1].xy);
+            float e2 = ccwEdgeFunction(pixCoord, tri.Verts[0].xy, tri.Verts[2].xy);
+
+            // https://fgiesen.wordpress.com/2013/02/08/triangle-rasterization-in-practice/
+            // TODO: Can we apply a bias here like suggested in the link above?
+            // How do we simplify this expression?
+            bool topLeft0 = (e0 == 0.0f) && isCCWTopLeftEdge(tri.Verts[1].xy, tri.Verts[0].xy);
+            bool topLeft1 = (e1 == 0.0f) && isCCWTopLeftEdge(tri.Verts[2].xy, tri.Verts[1].xy);
+            bool topLeft2 = (e2 == 0.0f) && isCCWTopLeftEdge(tri.Verts[0].xy, tri.Verts[2].xy);
+
+            if ((e0 > 0.0f || topLeft0)
+                && (e1 > 0.0f || topLeft1)
+                && (e2 > 0.0f || topLeft2))
             {
-                triangleIndex = tri.TriangleIndex;
-                float3 perVertexRcpW = rcp(float3(tri.Verts[0].w, tri.Verts[1].w, tri.Verts[2].w));
+                float totalArea = e0 + e1 + e2;
+                float3 screenBarycentrics = { e1 / totalArea, e2 / totalArea, e0 / totalArea };
+                float sampleDepth = dot(float3(tri.Verts[0].z, tri.Verts[1].z, tri.Verts[2].z), screenBarycentrics);
 
-                // Interpolate 1/W along our screenspace triangle then recover W.
-                float interpolatedW = rcp(dot(perVertexRcpW, screenBarycentrics));
+                if (sampleDepth < pixDepth && sampleDepth >= 0.0f)
+                {
+                    triangleIndex = tri.TriangleIndex;
+                    float3 perVertexRcpW = rcp(float3(tri.Verts[0].w, tri.Verts[1].w, tri.Verts[2].w));
 
-                // When we want to transform our coordinate into perspective correct interpolation
-                // Apply our per vertex 1/W to get Attribute0/W0
-                // Then apply our screenspace barycentric
-                // Attribute0/W0*Barycentric0
-                // And finally apply our interpolated W
-                // Attribute0/W0*Barycentric0*InterpolatedW
-                //
-                // We just bake these operations into a worldBarycentrics variable to apply to our attributes later down the line.
-                barycentrics = perVertexRcpW * screenBarycentrics * interpolatedW;
-                pixDepth = sampleDepth;
+                    // Interpolate 1/W along our screenspace triangle then recover W.
+                    float interpolatedW = rcp(dot(perVertexRcpW, screenBarycentrics));
+
+                    // When we want to transform our coordinate into perspective correct interpolation
+                    // Apply our per vertex 1/W to get Attribute0/W0
+                    // Then apply our screenspace barycentric
+                    // Attribute0/W0*Barycentric0
+                    // And finally apply our interpolated W
+                    // Attribute0/W0*Barycentric0*InterpolatedW
+                    //
+                    // We just bake these operations into a worldBarycentrics variable to apply to our attributes later down the line.
+                    barycentrics = perVertexRcpW * screenBarycentrics * interpolatedW;
+                    pixDepth = sampleDepth;
+                }
             }
         }
+
+        rasterBatchOffset = rasterBatch.Get().Next;
     }
 
     if (any(dispatchThreadId < Params.OutputDimensions))
