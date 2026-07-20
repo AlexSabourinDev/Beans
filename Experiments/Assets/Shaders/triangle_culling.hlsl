@@ -2,7 +2,7 @@
 #include "rasterizer.hsh"
 #include "ib_math.hsh"
 
-#define DEBUG_ALLOCATIONS
+// #define DEBUG_ALLOCATIONS
 
 struct CullingParams
 {
@@ -10,9 +10,9 @@ struct CullingParams
     float2 OutputDimensions;
     uint64_t MeshAddress;
     uint64_t StackAddress;
-    uint64_t RasterTileAddress; // TODO CPU
-    uint2 TileCount; // TODO CPU
-    float2 InvTileDims; // TODO CPU
+    uint64_t RasterTileAddress;
+    uint2 TileCount;
+    float2 InvTileDims;
     uint IndexCount;
     uint VertexCount;
 };
@@ -204,7 +204,7 @@ void CS(uint dispatchThreadId : SV_DispatchThreadId, uint groupThreadIndex : SV_
     {
         if (groupThreadIndex == 0)
         {
-            StackWriteOffset = stackAlloc(Params.StackAddress, PostTransformCacheCount * sizeof(NDCTri));
+            StackWriteOffset = stackAlloc(Params.StackAddress, PostTransformCacheCount * sizeof(NDCTri), sizeof(float4));
         }
         GroupMemoryBarrierWithGroupSync();
 
