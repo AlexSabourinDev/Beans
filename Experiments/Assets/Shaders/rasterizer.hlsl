@@ -12,6 +12,7 @@ struct RasterizerParams
 {
     float2 OutputDimensions;
     uint64_t MeshAddress;
+    uint64_t StackAddress;
     uint IndexCount;
     uint VertexCount;
 };
@@ -20,7 +21,6 @@ struct RasterizerParams
 [[vk::binding(1)]] Texture2D<float4> Input;
 [[vk::binding(2)]] SamplerState Samplers[ib_Sampler_Count];
 [[vk::binding(3)]] RWTexture2D<float4> Output;
-[[vk::binding(4)]] ByteAddressBuffer PostTransformCache;
 
 template<int C>
 vector<float, C> interpolate(vector<float, C> a0, vector<float, C> a1, vector<float, C> a2, float3 barycentrics)
@@ -72,11 +72,12 @@ void CS(uint2 dispatchThreadId : SV_DispatchThreadId, uint groupIndex : SV_Group
 
     float2 pixCoord = (float2)dispatchThreadId + 0.5f;
 
-    uint triangleCount = PostTransformCache.Load(0u);
+    // TODO: Fix
+    uint triangleCount = vk::RawBufferLoad<uint>(Params.StackAddress) / sizeof(NDCTri);
     for (uint triIndex = 0u; triIndex < triangleCount; triIndex++)
     {
         uint writeOffset = sizeof(uint);
-        NDCTri tri = PostTransformCache.Load<NDCTri>(writeOffset + triIndex * sizeof(NDCTri));
+        NDCTri tri = vk::RawBufferLoad<NDCTri>(Params.StackAddress + writeOffset + triIndex * sizeof(NDCTri));
 
         float e0 = ccwEdgeFunction(pixCoord, tri.Verts[1].xy, tri.Verts[0].xy);
         float e1 = ccwEdgeFunction(pixCoord, tri.Verts[2].xy, tri.Verts[1].xy);

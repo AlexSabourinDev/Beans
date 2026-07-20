@@ -6,6 +6,7 @@ struct CullingParams
     float4x4 ProjectionFromWorld;
     float2 OutputDimensions;
     uint64_t MeshAddress;
+    uint64_t StackAddress;
     uint IndexCount;
     uint VertexCount;
 };
@@ -56,7 +57,15 @@ float2 roundToFixedPoint(float2 value)
 }
 
 [[vk::binding(0)]] ConstantBuffer<CullingParams> Params;
-[[vk::binding(1)]] RWByteAddressBuffer PostTransformCache;
+
+uint64_t stackAlloc(uint64_t stackAddress, uint size)
+{
+    vk::BufferPointer<uint> stack = vk::BufferPointer<uint>(stackAddress);
+    uint stackOffset;
+    InterlockedAdd(stack.Get(), size, stackOffset);
+
+    return stackAddress + stackOffset + sizeof(uint);
+}
 
 static uint const ThreadGroupX = 64u;
 
@@ -85,11 +94,7 @@ void CS(uint dispatchThreadId : SV_DispatchThreadId, uint groupIndex : SV_GroupI
         {
             // TODO: Use groupshared as primary backing,
             // Then flush to global memory.
-            // TODO: PostTransformCache needs worst case memory. Can we make it dynamic?
-            // Or maybe compute the number of transformed vertices?
-            // Or maybe shrink it once we know how large it should be?
-            uint writeIndex;
-            PostTransformCache.InterlockedAdd(0u, 1u, writeIndex);
+            uint64_t writeAddress = stackAlloc(Params.StackAddress, sizeof(NDCTri));
 
             NDCTri ndcTri = (NDCTri)0;
             for (uint i = 0; i < 3; i++)
@@ -98,8 +103,7 @@ void CS(uint dispatchThreadId : SV_DispatchThreadId, uint groupIndex : SV_GroupI
             }
             ndcTri.TriangleIndex = triIndex;
 
-            uint writeOffset = sizeof(uint);
-            PostTransformCache.Store<NDCTri>(writeOffset + writeIndex * sizeof(NDCTri), ndcTri);
+            vk::RawBufferStore(writeAddress, ndcTri);
         }
     }
 }

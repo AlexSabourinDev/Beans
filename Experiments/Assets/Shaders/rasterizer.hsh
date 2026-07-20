@@ -7,4 +7,11 @@ struct NDCTri
     uint TriangleIndex;
 };
 
+static uint const RasterBatchSize = 16;
+struct RasterBatch
+{
+    uint TriangleIndices[RasterBatchSize];
+    uint TriangleCount;
+};
+
 #endif // RASTERIZER_HSH
