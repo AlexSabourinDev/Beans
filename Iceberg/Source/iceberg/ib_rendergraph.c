@@ -1249,14 +1249,37 @@ ibr_ResourceState ibr_textureState(ibr_Resource* resource, ibr_TextureState stat
 			.AcquireAndReleaseStageMask = stage,
 		};
 		case ibr_TextureState_ReadWrite:
-			return (ibr_ResourceState)
-		{
-			.Resource = resource,
-			.Layout = VK_IMAGE_LAYOUT_GENERAL,
-			.AcquireAccessMask = VK_ACCESS_SHADER_READ_BIT,
-			.ReleaseAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-			.AcquireAndReleaseStageMask = stage,
-		};
+            return (ibr_ResourceState)
+            {
+                .Resource = resource,
+                .Layout = VK_IMAGE_LAYOUT_GENERAL,
+                .AcquireAccessMask = VK_ACCESS_SHADER_READ_BIT,
+                .ReleaseAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                .AcquireAndReleaseStageMask = stage,
+            };
+        case ibr_TextureState_RenderTarget:
+            if (isDepth)
+            {
+                return (ibr_ResourceState)
+                {
+                    .Resource = resource,
+                    .Layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                    .AcquireAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
+                    .ReleaseAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                    .AcquireAndReleaseStageMask = stage,
+                };
+            }
+            else
+            {
+                return (ibr_ResourceState)
+                {
+                    .Resource = resource,
+                    .Layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    .AcquireAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
+                    .ReleaseAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                    .AcquireAndReleaseStageMask = stage,
+                };
+            }
 		case ibr_TextureState_TransferSrc:
 			ib_assert(stage == VK_PIPELINE_STAGE_TRANSFER_BIT || stage == VK_PIPELINE_STAGE_2_COPY_BIT);
 			return (ibr_ResourceState)

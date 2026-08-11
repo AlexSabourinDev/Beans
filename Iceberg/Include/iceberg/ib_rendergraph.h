@@ -372,6 +372,7 @@ enum
     ibr_TextureState_ReadWrite,
     ibr_TextureState_TransferSrc,
     ibr_TextureState_TransferDst,
+    ibr_TextureState_RenderTarget,
     ibr_TextureState_Mask = 0x0F, // Up to 16 RW states
     ibr_TextureStateFlag_Depth = 0x10,
 };

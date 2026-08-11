@@ -329,7 +329,7 @@ static void compileShader(char const* shader, char const *shaderOutput, char con
 {
     char shaderCompilation[1024];
     snprintf(shaderCompilation, ib_arrayCount(shaderCompilation),
-        "py %s/../../Assets/compile_shaders.py -i %s/../../Assets/Shaders/%s -e %s -t %s -o %s/../../CompiledAssets/Shaders/%s \n",
+        "py %s/../Assets/compile_shaders.py -i %s/../Assets/Shaders/%s -e %s -t %s -o %s/../CompiledAssets/Shaders/%s \n",
         CurrentWorkingDirectory, CurrentWorkingDirectory, shader, entryPoint, shaderType, CurrentWorkingDirectory, shaderOutput);
     printf("Running: %s\n", shaderCompilation);
     system(shaderCompilation);
@@ -413,7 +413,7 @@ void loadShaders()
 
     void* rasterizerSpv;
     size_t rasterizerSpvSize;
-    readWholeFile("../../CompiledAssets/Shaders/rasterizer.spv", &rasterizerSpv, &rasterizerSpvSize);
+    readWholeFile("../CompiledAssets/Shaders/rasterizer.spv", &rasterizerSpv, &rasterizerSpvSize);
     ib_freeComputePipeline(&Core, &RasterizerCompute);
     RasterizerCompute = ib_allocComputePipeline(&Core, (ib_ComputePipelineDesc)
                             {
@@ -432,7 +432,7 @@ void loadShaders()
 
     void* cullingSpv;
     size_t cullingSpvSize;
-    readWholeFile("../../CompiledAssets/Shaders/triangle_culling.spv", &cullingSpv, &cullingSpvSize);
+    readWholeFile("../CompiledAssets/Shaders/triangle_culling.spv", &cullingSpv, &cullingSpvSize);
     ib_freeComputePipeline(&Core, &TriangleCullingCompute);
     TriangleCullingCompute = ib_allocComputePipeline(&Core, (ib_ComputePipelineDesc)
                             {
@@ -776,6 +776,12 @@ static void update(void)
         ibr_endTransferPass(graph, commands);
 
         imgui_endFrame();
+
+        ibr_barriers(graph, commands, (ibr_BarriersDesc)
+        {
+            ibr_textureState(&swapchainResource, ibr_TextureState_RenderTarget, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT)
+        });
+
         imgui_render(commands, graph->ScreenExtent, swapchainResource.Texture);
 
         ibr_barriers(graph, commands, (ibr_BarriersDesc)
