@@ -1340,6 +1340,7 @@ ib_Surface ib_allocWin32Surface(ib_Core* core, ib_SurfaceDesc desc)
         for (uint32_t i = 0; i < ib_FramebufferCount; i++)
         {
             ib_vkCheck(vkCreateSemaphore(core->LogicalDevice, &semaphoreCreateInfo, ib_NoVkAllocator, &surface.Framebuffers[i].AcquireSemaphore));
+            ib_vkCheck(vkCreateSemaphore(core->LogicalDevice, &semaphoreCreateInfo, ib_NoVkAllocator, &surface.PresentSemaphores[i]));
         }
     }
 
@@ -1351,6 +1352,7 @@ void ib_freeSurface(ib_Core* core, ib_Surface* surface)
     for (uint32_t fb = 0; fb < ib_FramebufferCount; fb++)
     {
         vkDestroySemaphore(core->LogicalDevice, surface->Framebuffers[fb].AcquireSemaphore, ib_NoVkAllocator);
+        vkDestroySemaphore(core->LogicalDevice, surface->PresentSemaphores[fb], ib_NoVkAllocator);
         vkDestroyImageView(core->LogicalDevice, surface->SwapchainTextures[fb].View, ib_NoVkAllocator);
     }
     vkDestroySwapchainKHR(core->LogicalDevice, surface->Swapchain, ib_NoVkAllocator);

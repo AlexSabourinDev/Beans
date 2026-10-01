@@ -313,11 +313,6 @@ void ibr_initRenderGraphs(ib_Core* core, ibr_RenderGraph* graphs, uint32_t graph
             ib_vkCheck(vkCreateCommandPool(core->LogicalDevice, &commandPoolCreateInfo, ib_NoVkAllocator, &graphs[i].TransientCommandPools[q]));
         }
 
-        ib_vkCheck(vkCreateSemaphore(core->LogicalDevice, &(VkSemaphoreCreateInfo)
-                                     {
-                                         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
-                                     }, ib_NoVkAllocator, &graphs[i].FrameSemaphore));
-
         ib_vkCheck(vkCreateFence(core->LogicalDevice, &(VkFenceCreateInfo)
                                  {
                                      .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
@@ -371,7 +366,6 @@ void ibr_killRenderGraphs(ib_Core* core, ibr_RenderGraph* graphs, uint32_t graph
         }
 
         vkDestroyFence(core->LogicalDevice, graph->FrameFence, ib_NoVkAllocator);
-        vkDestroySemaphore(core->LogicalDevice, graph->FrameSemaphore, ib_NoVkAllocator);
 
         ib_killTimerManager(core, &graph->TimerManager);
         iba_killStackAllocator(&graph->FrameCPUStack);
@@ -430,6 +424,10 @@ bool ibr_beginFrame(ibr_RenderGraph* graph, ibr_BeginFrameDesc desc)
         graph->SwapchainTextureIndex = prepareResult.SwapchainTextureIndex;
         graph->SwapchainTexture = &desc.Surface->SwapchainTextures[graph->SwapchainTextureIndex];
         graph->SwapchainAcquireSemaphore = desc.Surface->Framebuffers[desc.FrameIndex].AcquireSemaphore;
+
+        // The present semaphore is tied to the swapchain texture index.
+        // See: https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html
+        graph->PresentSemaphore = desc.Surface->PresentSemaphores[graph->SwapchainTextureIndex];
         graph->ScreenExtent = (VkExtent2D) { graph->SwapchainTexture->Extent.width, graph->SwapchainTexture->Extent.height };
     }
     else
@@ -437,6 +435,7 @@ bool ibr_beginFrame(ibr_RenderGraph* graph, ibr_BeginFrameDesc desc)
         graph->ScreenExtent = (VkExtent2D) { 1, 1 };
         graph->SwapchainTexture = NULL;
         graph->SwapchainAcquireSemaphore = VK_NULL_HANDLE;
+        graph->PresentSemaphore = VK_NULL_HANDLE;
     }
 
     // Only reset our fence if we know we're going to signal it.
@@ -963,7 +962,7 @@ void ibr_present(ibr_PresentDesc desc)
 											{
 												.Surface = desc.Surface,
 												.SwapchainTextureIndex = desc.Graph->SwapchainTextureIndex,
-												.WaitSemaphore = desc.Graph->FrameSemaphore
+												.WaitSemaphore = desc.Graph->PresentSemaphore
 											});
 	if (state == ib_SurfaceState_ShouldRebuild)
 	{

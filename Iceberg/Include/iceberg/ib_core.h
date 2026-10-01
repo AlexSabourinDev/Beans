@@ -180,6 +180,7 @@ typedef struct
         VkSemaphore AcquireSemaphore;
     } Framebuffers[ib_FramebufferCount];
     ib_Texture SwapchainTextures[ib_FramebufferCount];
+    VkSemaphore PresentSemaphores[ib_FramebufferCount];
 } ib_Surface;
 
 typedef struct
@@ -220,6 +221,7 @@ typedef struct
     ib_Surface* Surface;
     uint32_t SwapchainTextureIndex;
     VkSemaphore WaitSemaphore;
+    VkFence SignalFence;
 } ib_PresentSurfaceDesc;
 
 ib_SurfaceState ib_presentSurface(ib_Core* core, ib_PresentSurfaceDesc presentDesc);

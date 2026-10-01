@@ -81,7 +81,7 @@ typedef struct ibr_RenderGraph
     ibr_TransientCommandBuffer* TransientCommandBuffers[ib_Queue_Count];
     ibr_TransientCommandBuffer* ActiveCommandBuffer[ib_Queue_Count];
     VkFence FrameFence;
-    VkSemaphore FrameSemaphore;
+    VkSemaphore PresentSemaphore;
     VkSemaphore SwapchainAcquireSemaphore;
     uint32_t SwapchainTextureIndex;
     ib_Texture* SwapchainTexture;

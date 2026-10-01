@@ -790,7 +790,7 @@ static void update(void)
                                      .Queue = ib_Queue_Graphics,
                                      .CommandBuffers = commands,
                                      .WaitSemaphores = (ibr_SemaphoreSubmit){ graph->SwapchainAcquireSemaphore },
-                                     .SignalSemaphores = (ibr_SemaphoreSubmit){ graph->FrameSemaphore },
+                                     .SignalSemaphores = (ibr_SemaphoreSubmit){ graph->PresentSemaphore },
                                      .SubmitFence = graph->FrameFence
                                  });
 
