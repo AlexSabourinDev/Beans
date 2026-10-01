@@ -51,6 +51,7 @@ static void win32RunProcess(char* commandLine)
     {
         WaitForSingleObject(processInformation.hProcess, INFINITE);
         CloseHandle(processInformation.hProcess);
+		FlushFileBuffers(outputLog);
     }
     else
     {
@@ -73,6 +74,17 @@ typedef struct
     size_t DisassemblyStatsSize;
     bool ShouldCompile;
 } CompilationContext;
+
+void initContext(CompilationContext* context)
+{
+	memset(context, 0, sizeof(CompilationContext));
+	context->DisassemblyStats = calloc(1, 1);
+	context->DisassemblyStatsSize = 1;
+	context->Disassembly = calloc(1, 1);
+	context->DisassemblySize = 1;
+	context->SourceFileData = calloc(1, 1);
+	context->SourceFileSize = 1;
+}
 
 #define MaxCompilationContexts 8
 static CompilationContext Contexts[MaxCompilationContexts];
@@ -128,7 +140,7 @@ static void readWholeFileFromHandle(FILE* file, char** output, size_t* outputSiz
     *output = realloc(*output, fileSize + 1);
     *outputSize = fileSize + 1;
 
-    fread(*output, fileSize, 1, file);
+    fileSize = fread(*output, 1, fileSize, file);
     (*output)[fileSize] = 0;
 }
 
@@ -160,12 +172,7 @@ static void init(void)
 {
     for (uint32_t i = 0; i < MaxCompilationContexts; i++)
     {
-        Contexts[i].DisassemblyStats = calloc(1, 1);
-        Contexts[i].DisassemblyStatsSize = 1;
-        Contexts[i].Disassembly = calloc(1, 1);
-        Contexts[i].DisassemblySize = 1;
-        Contexts[i].SourceFileData = calloc(1, 1);
-        Contexts[i].SourceFileSize = 1;
+		initContext(&Contexts[i]);
     }
 
     CreateDirectoryA("temp", NULL);
@@ -238,7 +245,8 @@ static void update(void)
                 char contextName[] = "Context 0";
                 // Bit of a hack, 9th character is 0, make it match our active context count.
                 contextName[8] += i;
-                if (igBeginTabItem(contextName, NULL, ImGuiTabItemFlags_None))
+				bool contextOpen = true;
+                if (igBeginTabItem(contextName, &contextOpen, ImGuiTabItemFlags_None))
                 {
                     CurrentContext = i;
 
@@ -346,6 +354,19 @@ static void update(void)
                     igEndTable();
                     igEndTabItem();
                 }
+
+				// If our tab was closed
+				if(!contextOpen)
+				{
+					// Move our contexts down.
+					for(uint32_t j = i; j < ActiveContexts - 1; j++)
+					{
+						Contexts[j] = Contexts[j + 1];
+					}
+					// Reset the last context.
+					initContext(&Contexts[ActiveContexts - 1]);
+					ActiveContexts--;
+				}
             }
 
             if (igTabItemButton("+", ImGuiTabItemFlags_Button))
