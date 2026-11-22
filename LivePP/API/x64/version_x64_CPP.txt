@@ -1,0 +1,2 @@
+Live++ for Windows C++, 2.11.5
+Released on October 23, 2026

@@ -11,6 +11,9 @@
 #include "../Shared/ib_imgui.h"
 #include <cimgui.h>
 
+#include "../ShaderHeaders/triangle_culling.h"
+#include "../ShaderHeaders/rasterizer.h"
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stddef.h>
@@ -329,62 +332,13 @@ static void compileShader(char const* shader, char const *shaderOutput, char con
 {
     char shaderCompilation[1024];
     snprintf(shaderCompilation, ib_arrayCount(shaderCompilation),
-        "py %s/../Assets/compile_shaders.py -i %s/../Assets/Shaders/%s -e %s -t %s -o %s/../CompiledAssets/Shaders/%s \n",
+        "py %s/../../Python/compile_shaders.py -i %s/../../Assets/Shaders/%s -e %s -t %s -o %s/../../CompiledAssets/Shaders/%s \n",
         CurrentWorkingDirectory, CurrentWorkingDirectory, shader, entryPoint, shaderType, CurrentWorkingDirectory, shaderOutput);
     printf("Running: %s\n", shaderCompilation);
     system(shaderCompilation);
 }
 
-typedef struct
-{
-    cv2 OutputDimensions;
-    uint64_t MeshAddress;
-    uint64_t StackAddress;
-    uint64_t RasterTileAddress;
-    uint32_t IndexCount;
-    uint32_t VertexCount;
-} RasterizerParams;
-
-enum
-{
-    Rasterizer_Params = 0,
-    Rasterizer_Input,
-    Rasterizer_Samplers,
-    Rasterizer_Output,
-};
-
-ib_ShaderInputDesc const RasterizerInputs[] =
-{
-    [Rasterizer_Params] = { .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER },
-    [Rasterizer_Input] = { .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE },
-    [Rasterizer_Samplers] = { .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_SAMPLER, .UseImmutableSamplers = true },
-    [Rasterizer_Output] = { .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE },
-};
-
 ib_ComputePipeline RasterizerCompute;
-
-typedef struct
-{
-    cm4 ProjectionFromWorld;
-    cv2 OutputDimensions;
-    uint64_t MeshAddress;
-    uint64_t StackAddress;
-    uint64_t RasterTileAddress;
-    cu2 TileCount;
-    cv2 InvTileDims;
-    uint32_t IndexCount;
-    uint32_t VertexCount;
-} TriangleCullingParams;
-
-enum
-{
-    TriangleCulling_Params = 0,
-};
-
-ib_ShaderInputDesc const TriangleCullingInputs[] =
-{
-    [TriangleCulling_Params] = { .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER },
-};
 
 ib_ComputePipeline TriangleCullingCompute;
 
@@ -413,7 +367,7 @@ void loadShaders()
 
     void* rasterizerSpv;
     size_t rasterizerSpvSize;
-    readWholeFile("../CompiledAssets/Shaders/rasterizer.spv", &rasterizerSpv, &rasterizerSpvSize);
+    readWholeFile("../../CompiledAssets/Shaders/rasterizer.spv", &rasterizerSpv, &rasterizerSpvSize);
     ib_freeComputePipeline(&Core, &RasterizerCompute);
     RasterizerCompute = ib_allocComputePipeline(&Core, (ib_ComputePipelineDesc)
                             {
@@ -432,7 +386,7 @@ void loadShaders()
 
     void* cullingSpv;
     size_t cullingSpvSize;
-    readWholeFile("../CompiledAssets/Shaders/triangle_culling.spv", &cullingSpv, &cullingSpvSize);
+    readWholeFile("../../CompiledAssets/Shaders/triangle_culling.spv", &cullingSpv, &cullingSpvSize);
     ib_freeComputePipeline(&Core, &TriangleCullingCompute);
     TriangleCullingCompute = ib_allocComputePipeline(&Core, (ib_ComputePipelineDesc)
                             {
@@ -619,7 +573,7 @@ static void update(void)
         ibr_Resource rasterBatches = ibr_allocPassResource(graph, commands,
                 ibr_transientBufferResourceDesc(rasterBatchPtrSize, ibr_TransientBufferFlag_Device | ibr_TransientBufferFlag_StorageBufferBit, "RasterBatches"));
         
-        uint64_t* rasterBatchData = (uint32_t*)transientAlloc(rasterBatchPtrSize, sizeof(uint32_t));
+        uint64_t* rasterBatchData = (uint64_t*)transientAlloc(rasterBatchPtrSize, sizeof(uint32_t));
         memset(rasterBatchData, 0u, rasterBatchPtrSize);
         ibr_writeResource(graph, commands, &rasterBatches, (ibr_WriteData)
                           {
@@ -629,8 +583,8 @@ static void update(void)
 
         // Triangle Culling
         {
-            ibr_Resource cullingParams = ibr_allocPassResource(graph, commands,
-                ibr_transientBufferResourceDesc(sizeof(TriangleCullingParams), ibr_TransientBufferFlag_Device | ibr_TransientBufferFlag_UniformBufferBit, "CullingParams"));
+            ibr_Resource cullingParamsResource = ibr_allocPassResource(graph, commands,
+                                                               ibr_transientBufferResourceDesc(sizeof(CullingParams), ibr_TransientBufferFlag_Device | ibr_TransientBufferFlag_UniformBufferBit, "CullingParams"));
 
             float aspectRatio = (float)graph->ScreenExtent.width / (float)graph->ScreenExtent.height;
             cm4 projection = cm4_perspective_projection(tanf(cran_pi / 4.0f), 0.1f, 1000.0f, aspectRatio);
@@ -638,21 +592,24 @@ static void update(void)
             cm4 rotate = cm4_mul(cm4_rotate_xz(rotation), cm4_rotate_xy(rotation));
             cm4 projectionFromWorld = cm4_mul(cm4_mul(projection, view), rotate);
 
-            ibr_writeResource(graph, commands, &cullingParams, (ibr_WriteData)
+            CullingParams cullingParams =
+            {
+                .OutputDimensions = { (float)graph->ScreenExtent.width, (float)graph->ScreenExtent.height },
+                .MeshAddress = GlobalBufferMemory.DeviceAddress + SphereMesh.Alloc.Offset,
+                .StackAddress = gpuStack.Buffer->DeviceAddress,
+                .RasterTileAddress = rasterBatches.Buffer->DeviceAddress,
+                .TileCount = { rasterTileCount.x, rasterTileCount.y },
+                .InvTileDims = { 1.0f / 8.0f, 1.0f / 8.0f },
+                .IndexCount = SphereMesh.IndexCount,
+                .VertexCount = SphereMesh.VertexCount,
+            };
+
+            memcpy(cullingParams.ProjectionFromWorld, &projectionFromWorld, sizeof(cm4));
+
+            ibr_writeResource(graph, commands, &cullingParamsResource, (ibr_WriteData)
                           {
-                              .Data = &(TriangleCullingParams)
-                              {
-                                  .OutputDimensions = (cv2) { (float)graph->ScreenExtent.width, (float)graph->ScreenExtent.height },
-                                  .MeshAddress = GlobalBufferMemory.DeviceAddress + SphereMesh.Alloc.Offset,
-                                  .StackAddress = gpuStack.Buffer->DeviceAddress,
-                                  .RasterTileAddress = rasterBatches.Buffer->DeviceAddress,
-                                  .TileCount = rasterTileCount,
-                                  .InvTileDims = (cv2){1.0f / 8.0f, 1.0f / 8.0f },
-                                  .IndexCount = SphereMesh.IndexCount,
-                                  .VertexCount = SphereMesh.VertexCount,
-                                  .ProjectionFromWorld = projectionFromWorld,
-                              },
-                              .Size = sizeof(TriangleCullingParams)
+                              .Data = &cullingParams,
+                              .Size = sizeof(CullingParams)
                           });
 
             ib_ShaderInput cullingInput = ibr_resourcesToShaderInput(graph, (ibr_ResourceToShaderInputDesc)
@@ -661,7 +618,7 @@ static void update(void)
                                        .ShaderInputs = ib_staticArrayRange(TriangleCullingInputs),
                                        .Resources = ib_staticArrayRange((ibr_Resource*[])
                                        {
-                                           [TriangleCulling_Params] = &cullingParams,
+                                           [TriangleCulling_Params] = &cullingParamsResource,
                                        })
                                    });
 
@@ -669,7 +626,7 @@ static void update(void)
                                  {
                                      .ResourceStates =
                                      {
-                                         ibr_bufferState(&cullingParams, ibr_BufferState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+                                         ibr_bufferState(&cullingParamsResource, ibr_BufferState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
                                          ibr_bufferState(&gpuStack, ibr_BufferState_ReadWrite, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
                                          ibr_bufferState(&rasterBatches, ibr_BufferState_ReadWrite, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
                                      },
@@ -677,7 +634,7 @@ static void update(void)
                                  });
             ib_bindShaderInputToCompute(commands, &TriangleCullingCompute, &cullingInput);
             vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, TriangleCullingCompute.VulkanPipeline);
-            vkCmdDispatch(commands, cu_div_ceil(triangleCount, 64u), 1u, 1u);
+            vkCmdDispatch(commands, cu_div_ceil(triangleCount, TriangleCullingThreadGroupSize.x), 1u, 1u);
             ibr_endComputePass(graph, commands);
         }
 
@@ -697,7 +654,7 @@ static void update(void)
                               {
                                   .Data = &(RasterizerParams)
                                   {
-                                      .OutputDimensions = (cv2) { (float)graph->ScreenExtent.width, (float)graph->ScreenExtent.height },
+                                      .OutputDimensions = { (float)graph->ScreenExtent.width, (float)graph->ScreenExtent.height },
                                       .MeshAddress = GlobalBufferMemory.DeviceAddress + SphereMesh.Alloc.Offset,
                                       .StackAddress = gpuStack.Buffer->DeviceAddress,
                                       .RasterTileAddress = rasterBatches.Buffer->DeviceAddress,
