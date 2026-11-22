@@ -1,0 +1,114 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="main.c" />
+    <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_allocator.c">
+      <Filter>Iceberg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_core.c">
+      <Filter>Iceberg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_rendergraph.c">
+      <Filter>Iceberg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Iceberg\Source\iceberg\ib_util.c">
+      <Filter>Iceberg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cimgui\imgui\imgui.cpp">
+      <Filter>cimgui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cimgui\imgui\imgui_demo.cpp">
+      <Filter>cimgui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cimgui\imgui\imgui_draw.cpp">
+      <Filter>cimgui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cimgui\imgui\backends\imgui_impl_vulkan.cpp">
+      <Filter>cimgui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cimgui\imgui\backends\imgui_impl_win32.cpp">
+      <Filter>cimgui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cimgui\imgui\imgui_tables.cpp">
+      <Filter>cimgui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cimgui\imgui\imgui_widgets.cpp">
+      <Filter>cimgui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cimgui\cimgui.cpp">
+      <Filter>cimgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cimgui\cimgui_impl.cpp">
+      <Filter>cimgui</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Iceberg">
+      <UniqueIdentifier>{70ea487c-5cdf-4f45-87e5-ab178f588df5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Sokol">
+      <UniqueIdentifier>{882404cc-75e9-4c80-8515-5d6539464233}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="cimgui">
+      <UniqueIdentifier>{a68a3018-e757-4f3d-a789-7de663ed8359}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="cimgui\imgui">
+      <UniqueIdentifier>{03b4aac8-69c9-4e3e-8628-1a178205f389}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{f2a01215-2625-4459-a06b-c0c7ada61cf2}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_allocator.h">
+      <Filter>Iceberg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_core.h">
+      <Filter>Iceberg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_rendergraph.h">
+      <Filter>Iceberg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_util.h">
+      <Filter>Iceberg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Sokol\Include\sokol\sokol_app.h">
+      <Filter>Sokol</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\imgui\imconfig.h">
+      <Filter>cimgui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\imgui\imgui.h">
+      <Filter>cimgui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\imgui\backends\imgui_impl_vulkan.h">
+      <Filter>cimgui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\imgui\backends\imgui_impl_win32.h">
+      <Filter>cimgui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\imgui\imgui_internal.h">
+      <Filter>cimgui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\imgui\imstb_rectpack.h">
+      <Filter>cimgui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\imgui\imstb_textedit.h">
+      <Filter>cimgui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\imgui\imstb_truetype.h">
+      <Filter>cimgui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\cimgui.h">
+      <Filter>cimgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cimgui\cimgui_impl.h">
+      <Filter>cimgui</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Shaders\background.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+  </ItemGroup>
+</Project>
