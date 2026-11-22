@@ -9,6 +9,8 @@
 
 #include <cranberries/cranberry_math.h>
 
+#include "ShaderHeaders/background.h"
+
 LppDefaultAgent LivePPAgent;
 static bool initLivePP()
 {
@@ -231,7 +233,34 @@ static void freeMesh(Mesh* mesh)
 
 // Mesh API End
 
-static void init()
+ib_ComputePipeline BackgroundShader;
+
+static void readWholeFileFromHandle(FILE* file, void** output, size_t* outputSize)
+{
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    *output = transientAlloc(fileSize, 1u);
+    *outputSize = fileSize;
+
+    fread(*output, fileSize, 1, file);
+}
+
+static bool readWholeFile(char const* path, void** output, size_t* outputSize)
+{
+    FILE *file = fopen(path, "rb");
+    if (file != NULL)
+    {
+        readWholeFileFromHandle(file, output, outputSize);
+        fclose(file);
+        return true;
+    }
+
+    return false;
+}
+
+static void init(void)
 {
     initLivePP();
     initStackAllocator();
@@ -253,6 +282,24 @@ static void init()
                                        .UseVSync = true,
                                        .SRGB = true
                                    });
+
+    void* backgroundSpv;
+    size_t backgroundSpvSize;
+    readWholeFile("CompiledAssets/Shaders/background.spv", &backgroundSpv, &backgroundSpvSize);
+    BackgroundShader = ib_allocComputePipeline(&Core, (ib_ComputePipelineDesc)
+                            {
+                                .ShaderDesc = (ib_ShaderDesc)
+                                {
+                                    .EntryPoint = "CS",
+                                    .Code = backgroundSpv,
+                                    .CodeSize = backgroundSpvSize,
+                                    .Stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                                },
+                                .ShaderInputs =
+                                {
+                                    { ib_staticArrayRange(BackgroundInputs) }
+                                }
+                            });
 
     // Spin up a graph for GPU-side initialization
     ibr_RenderGraph* graph = beginRenderGraph(NULL);
@@ -278,7 +325,7 @@ static void init()
     }
 }
 
-static void kill()
+static void kill(void)
 {
     vkDeviceWaitIdle(Core.LogicalDevice);
 
@@ -286,6 +333,7 @@ static void kill()
 
     killGlobalBufferMemory(&Core);
 
+    ib_freeComputePipeline(&Core, &BackgroundShader);
     ib_freeSurface(&Core, &Surface);
     ib_killCore(&Core);
 
@@ -293,7 +341,7 @@ static void kill()
     killLivePP();
 }
 
-static void update()
+static void update(void)
 {
     ibr_RenderGraph* graph = beginRenderGraph(&Surface);
     if (graph != NULL)
@@ -305,18 +353,89 @@ static void update()
         ibr_Resource swapchainResource = ibr_allocPassResource(graph, commands,
                                                                ibr_textureResourceDesc(graph->SwapchainTexture, VK_IMAGE_LAYOUT_UNDEFINED));
 
-        ibr_beginGraphicsPass(graph, commands, (ibr_BeginGraphicsPassDesc)
+        ibr_Resource renderOutput = ibr_allocPassResource(graph, commands,
+            ibr_transientTextureResourceDesc(ibr_ScreenExtent, VK_FORMAT_R8G8B8A8_UNORM, ibr_TransientTextureFlag_StorageBit | ibr_TransientTextureFlag_TransferSrcBit, "Render Output"));
+
+        ibr_beginComputePass(graph, commands, (ibr_BeginComputePassDesc)
                               {
-                                  .RenderTargets = (ibr_RenderTargetState)
-                                  {
-                                      .Resource = &swapchainResource,
-                                      .LoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                      .StoreOp = VK_ATTACHMENT_STORE_OP_STORE,
-                                      .ClearValue = { .color = { 1.0f, 0.0f, 1.0f, 1.0f } }
-                                  }
+                                  .ResourceStates = { ibr_textureState(&renderOutput, ibr_TextureState_Write, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT) }
                               });
 
-        ibr_endGraphicsPass(graph, commands);
+        ibr_Resource backgroundConstants = ibr_allocPassResource(graph, commands, (ibr_ResourceDesc)
+                              {
+                                  .Type = ibr_ResourceType_Buffer,
+                                  .Flags = ibr_ResourceFlag_Transient,
+                                  .BufferDesc =
+                                  {
+                                      .Usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                      .Size = sizeof(BackgroundConstants),
+                                      .RequiredMemoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                      .PreferredMemoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                      .DebugName = "Background Shader Constants",
+                                  }
+                              });
+        ibr_writeResource(graph, commands, &backgroundConstants, (ibr_WriteData)
+                          {
+                              .Data = &(BackgroundConstants)
+                              {
+                                  .OutputDimensions = { graph->ScreenExtent.width, graph->ScreenExtent.height }
+                              },
+                              .Size = sizeof(BackgroundConstants)
+                          });
+
+        ib_ShaderInput shaderData = ibr_resourcesToShaderInput(graph, (ibr_ResourceToShaderInputDesc)
+                                   {
+                                       .ShaderInputs = BackgroundInputs,
+                                       .Layout = &BackgroundShader.InlineShaderInputLayouts[0],
+                                       .Resources = ib_staticArrayRange((ibr_Resource*[])
+                                       {
+                                           [Background_Output] = &renderOutput,
+                                           [Background_Constants] = &backgroundConstants
+                                       })
+                                   });
+
+        ib_bindShaderInputToCompute(commands, &BackgroundShader, &shaderData);
+        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, BackgroundShader.VulkanPipeline);
+        vkCmdDispatch(commands, cu_div_ceil(graph->ScreenExtent.width, BackgroundThreadGroupSize.x), cu_div_ceil(graph->ScreenExtent.height, BackgroundThreadGroupSize.y), 1u);
+
+        ibr_endComputePass(graph, commands);
+
+        ibr_beginTransferPass(graph, commands, (ibr_BeginTransferPassDesc)
+                             {
+                                 .ResourceStates =
+                                 {
+                                    ibr_textureState(&renderOutput, ibr_TextureState_TransferSrc, VK_PIPELINE_STAGE_TRANSFER_BIT),
+                                    ibr_textureState(&swapchainResource, ibr_TextureState_TransferDst, VK_PIPELINE_STAGE_TRANSFER_BIT)
+                                 },
+                                 .PassName = "CopyToSwapchain"
+                             });
+
+        vkCmdCopyImage2(commands, &(VkCopyImageInfo2)
+                        {
+                            .sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2,
+                            .srcImage = renderOutput.Texture->Image,
+                            .srcImageLayout = renderOutput.TextureLayout,
+                            .dstImage = swapchainResource.Texture->Image,
+                            .dstImageLayout = swapchainResource.TextureLayout,
+                            .regionCount = 1,
+                            .pRegions = &(VkImageCopy2)
+                            {
+                                .sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2,
+                                .srcSubresource = (VkImageSubresourceLayers)
+                                {
+                                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                    .layerCount = 1u,
+                                },
+                                .dstSubresource = (VkImageSubresourceLayers)
+                                {
+                                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                    .layerCount = 1u,
+                                },
+                                .extent = renderOutput.Texture->Extent
+                            }
+                        });
+
+        ibr_endTransferPass(graph, commands);
 
         ibr_barriers(graph, commands, (ibr_BarriersDesc)
                      {

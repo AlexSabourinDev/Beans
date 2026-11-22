@@ -3,7 +3,7 @@ import subprocess
 
 scriptDir = os.path.dirname(os.path.abspath(__file__))
 
-def generateShaderHeader(input):
+def generateShaderHeader(input, output):
     basename = os.path.basename(input)
     filename, ext = os.path.splitext(basename)
 
@@ -13,8 +13,8 @@ def generateShaderHeader(input):
     shaderName = "".join(shaderNameList)
 
     codegenArgs = [f"{scriptDir}/../x64/Debug/ShaderHeaderGenerator.exe",
-                               f"-i = {scriptDir}/../CompiledAssets/Shaders/{filename}.spv",
-                               f"-o = {scriptDir}/../ShaderHeaders/{filename}.h",
+                               f"-i = {input}",
+                               f"-o = {output}",
                                f"-n = {shaderName}"]
 
     codegenArgs[1] = codegenArgs[1].replace("\\", "/")
@@ -35,5 +35,5 @@ if __name__ == "__main__":
             basename = os.path.basename(e.path)
             filename, ext = os.path.splitext(basename)
             if ext == ".hlsl":
-                  generateShaderHeader(e.path)
+                  generateShaderHeader(f"{scriptDir}/../CompiledAssets/Shaders/{filename}.spv", f"{scriptDir}/../ShaderHeaders/{filename}.h")
 

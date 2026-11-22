@@ -3,12 +3,16 @@
 
 struct BackgroundConstants
 {
-    
+    uint2 OutputDimensions;
 };
-[[vk::binding(1)]] ConstantBuffer<
+[[vk::binding(1)]] ConstantBuffer<BackgroundConstants> Constants;
 
 [numthreads(8, 8, 1)]
 void CS(uint2 aDispatchThreadId : SV_DispatchThreadID)
 {
-    Output[aDispatchThreadId] = 0.0f;
+    if (any(aDispatchThreadId >= Constants.OutputDimensions))
+    {
+        return;
+    }
+    Output[aDispatchThreadId] = float4(1.0f, 0.0f, 1.0f, 1.0f);
 }
