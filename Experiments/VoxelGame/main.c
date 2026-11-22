@@ -9,7 +9,7 @@
 
 #include <cranberries/cranberry_math.h>
 
-#include "ShaderHeaders/background.h"
+#include "ShaderHeaders/clear_color.h"
 
 LppDefaultAgent LivePPAgent;
 static bool initLivePP()
@@ -233,7 +233,7 @@ static void freeMesh(Mesh* mesh)
 
 // Mesh API End
 
-ib_ComputePipeline BackgroundShader;
+ib_ComputePipeline ClearColorShader;
 
 static void readWholeFileFromHandle(FILE* file, void** output, size_t* outputSize)
 {
@@ -283,21 +283,21 @@ static void init(void)
                                        .SRGB = true
                                    });
 
-    void* backgroundSpv;
-    size_t backgroundSpvSize;
-    readWholeFile("CompiledAssets/Shaders/background.spv", &backgroundSpv, &backgroundSpvSize);
-    BackgroundShader = ib_allocComputePipeline(&Core, (ib_ComputePipelineDesc)
+    void* clearColorSpv;
+    size_t clearColorSpvSize;
+    readWholeFile("CompiledAssets/Shaders/clear_color.spv", &clearColorSpv, &clearColorSpvSize);
+    ClearColorShader = ib_allocComputePipeline(&Core, (ib_ComputePipelineDesc)
                             {
                                 .ShaderDesc = (ib_ShaderDesc)
                                 {
                                     .EntryPoint = "CS",
-                                    .Code = backgroundSpv,
-                                    .CodeSize = backgroundSpvSize,
+                                    .Code = clearColorSpv,
+                                    .CodeSize = clearColorSpvSize,
                                     .Stage = VK_SHADER_STAGE_COMPUTE_BIT,
                                 },
                                 .ShaderInputs =
                                 {
-                                    { ib_staticArrayRange(BackgroundInputs) }
+                                    { ib_staticArrayRange(ClearColorInputs) }
                                 }
                             });
 
@@ -333,7 +333,7 @@ static void kill(void)
 
     killGlobalBufferMemory(&Core);
 
-    ib_freeComputePipeline(&Core, &BackgroundShader);
+    ib_freeComputePipeline(&Core, &ClearColorShader);
     ib_freeSurface(&Core, &Surface);
     ib_killCore(&Core);
 
@@ -356,47 +356,38 @@ static void update(void)
         ibr_Resource renderOutput = ibr_allocPassResource(graph, commands,
             ibr_transientTextureResourceDesc(ibr_ScreenExtent, VK_FORMAT_R8G8B8A8_UNORM, ibr_TransientTextureFlag_StorageBit | ibr_TransientTextureFlag_TransferSrcBit, "Render Output"));
 
+        ibr_Resource clearColorConstants = ibr_allocTransientBufferResource(graph,
+                              commands,
+                              &(ClearColorConstants)
+                              {
+                                  .OutputDimensions = { graph->ScreenExtent.width, graph->ScreenExtent.height },
+                                  .Color = cv4_to_c32u((cv4) { 1.0f, 1.0f, 0.0f, 1.0f })
+                              },
+                              sizeof(ClearColorConstants), ibr_TransientBufferFlag_Device, "ClearColor Constants");
+
         ibr_beginComputePass(graph, commands, (ibr_BeginComputePassDesc)
                               {
-                                  .ResourceStates = { ibr_textureState(&renderOutput, ibr_TextureState_Write, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT) }
-                              });
-
-        ibr_Resource backgroundConstants = ibr_allocPassResource(graph, commands, (ibr_ResourceDesc)
-                              {
-                                  .Type = ibr_ResourceType_Buffer,
-                                  .Flags = ibr_ResourceFlag_Transient,
-                                  .BufferDesc =
+                                  .ResourceStates =
                                   {
-                                      .Usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                      .Size = sizeof(BackgroundConstants),
-                                      .RequiredMemoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                      .PreferredMemoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-                                      .DebugName = "Background Shader Constants",
+                                      ibr_textureState(&renderOutput, ibr_TextureState_Write, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+                                      ibr_bufferState(&clearColorConstants, ibr_BufferState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
                                   }
                               });
-        ibr_writeResource(graph, commands, &backgroundConstants, (ibr_WriteData)
-                          {
-                              .Data = &(BackgroundConstants)
-                              {
-                                  .OutputDimensions = { graph->ScreenExtent.width, graph->ScreenExtent.height }
-                              },
-                              .Size = sizeof(BackgroundConstants)
-                          });
 
         ib_ShaderInput shaderData = ibr_resourcesToShaderInput(graph, (ibr_ResourceToShaderInputDesc)
                                    {
-                                       .ShaderInputs = BackgroundInputs,
-                                       .Layout = &BackgroundShader.InlineShaderInputLayouts[0],
+                                       .ShaderInputs = ClearColorInputs,
+                                       .Layout = &ClearColorShader.InlineShaderInputLayouts[0],
                                        .Resources = ib_staticArrayRange((ibr_Resource*[])
                                        {
-                                           [Background_Output] = &renderOutput,
-                                           [Background_Constants] = &backgroundConstants
+                                           [ClearColor_Output] = &renderOutput,
+                                           [ClearColor_Constants] = &clearColorConstants
                                        })
                                    });
 
-        ib_bindShaderInputToCompute(commands, &BackgroundShader, &shaderData);
-        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, BackgroundShader.VulkanPipeline);
-        vkCmdDispatch(commands, cu_div_ceil(graph->ScreenExtent.width, BackgroundThreadGroupSize.x), cu_div_ceil(graph->ScreenExtent.height, BackgroundThreadGroupSize.y), 1u);
+        ib_bindShaderInputToCompute(commands, &ClearColorShader, &shaderData);
+        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, ClearColorShader.VulkanPipeline);
+        vkCmdDispatch(commands, cu_div_ceil(graph->ScreenExtent.width, ClearColorThreadGroupSize.x), cu_div_ceil(graph->ScreenExtent.height, ClearColorThreadGroupSize.y), 1u);
 
         ibr_endComputePass(graph, commands);
 

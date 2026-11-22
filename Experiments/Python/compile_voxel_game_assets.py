@@ -11,8 +11,11 @@ def generateShader(input, output, outputHeader, type, entry):
 if not os.path.exists(f"{gameDir}/ShaderHeaders/"):
     os.mkdir(f"{gameDir}/ShaderHeaders/")
 
-generateShader("Shaders/background.hlsl",
-               "CompiledAssets/Shaders/background.spv",
-               "ShaderHeaders/background.h",
-               "compute",
-               "CS")
+shaders = [("clear_color", "compute", "CS")]
+
+for shader in shaders:
+    generateShader(f"Shaders/{shader[0]}.hlsl",
+                   f"CompiledAssets/Shaders/{shader[0]}.spv",
+                   f"ShaderHeaders/{shader[0]}.h",
+                   shader[1],
+                   shader[2])

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="main.c" />
@@ -58,6 +58,12 @@
     <Filter Include="Shaders">
       <UniqueIdentifier>{f2a01215-2625-4459-a06b-c0c7ada61cf2}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Iceberg\Shaders">
+      <UniqueIdentifier>{dab70873-b74e-4990-938d-b2a1d56416de}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="cranberries">
+      <UniqueIdentifier>{c2898842-3577-4941-b7cb-d3dbf3c870b9}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\Iceberg\Include\iceberg\ib_allocator.h">
@@ -105,10 +111,32 @@
     <ClInclude Include="..\..\cimgui\cimgui_impl.h">
       <Filter>cimgui</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Cranberries\Include\cranberries\cranberry_math.h">
+      <Filter>cranberries</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="Shaders\background.hlsl">
+    <FxCompile Include="..\Python\compile_voxel_game_assets.py" />
+    <FxCompile Include="Shaders\clear_color.hlsl">
       <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\..\Iceberg\Shaders\ib_brdf.hsh">
+      <Filter>Iceberg\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\..\Iceberg\Shaders\ib_encodings.hsh">
+      <Filter>Iceberg\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\..\Iceberg\Shaders\ib_math.hsh">
+      <Filter>Iceberg\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\..\Iceberg\Shaders\ib_sampler.hsh">
+      <Filter>Iceberg\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\..\Iceberg\Shaders\ib_spherical_harmonics.hsh">
+      <Filter>Iceberg\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="..\..\Iceberg\Shaders\ib_vulkan.hsh">
+      <Filter>Iceberg\Shaders</Filter>
     </FxCompile>
   </ItemGroup>
 </Project>

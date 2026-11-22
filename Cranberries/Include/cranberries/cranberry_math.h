@@ -329,6 +329,8 @@ cran_forceinline float cv4_dot(cv4 l, cv4 r);
 
 cran_forceinline ch4 cv4_f32_to_f16(cv4 f32);
 cran_forceinline cv4 cv4_f16_to_f32(ch4 f16);
+cran_forceinline c32u cv4_to_c32u(cv4 v);
+cran_forceinline cv4 c32u_to_cv4(c32u v);
 
 // Matrix API
 cran_forceinline cm3 cm3_rotate_xy(float theta);
@@ -1066,6 +1068,24 @@ cran_forceinline cv4 cv4_f16_to_f32(ch4 f16)
 		cf_f16_to_f32(f16.z),
 		cf_f16_to_f32(f16.w),
 	};
+}
+
+cran_forceinline c32u cv4_to_c32u(cv4 v)
+{
+	return (c32u)(cf_saturate(v.x) * 255.0f)
+		| ((c32u)(cf_saturate(v.y) * 255.0f) << 8)
+		| ((c32u)(cf_saturate(v.z) * 255.0f) << 16)
+		| ((c32u)(cf_saturate(v.w) * 255.0f) << 24);
+}
+
+cran_forceinline cv4 c32u_to_cv4(c32u v)
+{
+	cv4 output;
+	output.x = (float)(v & 0xFF) / 255.0f;
+	output.y = (float)((v >> 8) & 0xFF) / 255.0f;
+	output.z = (float)((v >> 16) & 0xFF) / 255.0f;
+	output.w = (float)((v >> 24) & 0xFF) / 255.0f;
+	return output;
 }
 
 // Matrix Implementation

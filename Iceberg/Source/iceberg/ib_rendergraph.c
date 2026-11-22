@@ -801,6 +801,17 @@ void ibr_writeResources(ibr_RenderGraph* graph, VkCommandBuffer commands, ibr_Wr
     }
 }
 
+ibr_Resource ibr_allocTransientBufferResource(ibr_RenderGraph* graph, VkCommandBuffer commands, void* data, size_t size, ibr_TransientBufferFlags flags, char const* debugName)
+{
+    ibr_Resource resource = ibr_allocPassResource(graph, commands, ibr_transientBufferResourceDesc(size, flags, debugName));
+    ibr_writeResource(graph, commands, &resource, (ibr_WriteData)
+                      {
+                          .Data = data,
+                          .Size = size
+                      });
+    return resource;
+}
+
 VkImageView ibr_allocTransientImageView(ibr_RenderGraph* graph, ibr_AllocTransientImageViewDesc desc)
 {
 	ibr_TransientImageView* transientImageView;

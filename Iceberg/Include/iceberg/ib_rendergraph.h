@@ -248,6 +248,8 @@ static void ibr_writeResource(ibr_RenderGraph* graph, VkCommandBuffer commands, 
                        });
 }
 
+ibr_Resource ibr_allocTransientBufferResource(ibr_RenderGraph* graph, VkCommandBuffer commands, void* data, size_t size, ibr_TransientBufferFlags flags, char const* debugName);
+
 typedef struct
 {
     VkSemaphore Semaphore;

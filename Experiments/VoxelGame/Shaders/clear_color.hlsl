@@ -1,11 +1,13 @@
+#include "ib_encodings.hsh"
 
 [[vk::binding(0)]] RWTexture2D<float4> Output;
 
-struct BackgroundConstants
+struct ClearColorConstants
 {
     uint2 OutputDimensions;
+    uint Color;
 };
-[[vk::binding(1)]] ConstantBuffer<BackgroundConstants> Constants;
+[[vk::binding(1)]] ConstantBuffer<ClearColorConstants> Constants;
 
 [numthreads(8, 8, 1)]
 void CS(uint2 aDispatchThreadId : SV_DispatchThreadID)
@@ -14,5 +16,5 @@ void CS(uint2 aDispatchThreadId : SV_DispatchThreadID)
     {
         return;
     }
-    Output[aDispatchThreadId] = float4(1.0f, 0.0f, 1.0f, 1.0f);
+    Output[aDispatchThreadId] = unpackRGBA(Constants.Color);
 }
