@@ -10,11 +10,11 @@ struct ClearColorConstants
 [[vk::binding(1)]] ConstantBuffer<ClearColorConstants> Constants;
 
 [numthreads(8, 8, 1)]
-void CS(uint2 aDispatchThreadId : SV_DispatchThreadID)
+void CS(uint2 dispatchThreadID : SV_DispatchThreadID)
 {
-    if (any(aDispatchThreadId >= Constants.OutputDimensions))
+    if (any(dispatchThreadID >= Constants.OutputDimensions))
     {
         return;
     }
-    Output[aDispatchThreadId] = unpackRGBA(Constants.Color);
+    Output[dispatchThreadID] = unpackRGBA(Constants.Color);
 }

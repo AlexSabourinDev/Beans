@@ -138,5 +138,8 @@
     <FxCompile Include="..\..\Iceberg\Shaders\ib_vulkan.hsh">
       <Filter>Iceberg\Shaders</Filter>
     </FxCompile>
+    <FxCompile Include="Shaders\trace_voxels.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>

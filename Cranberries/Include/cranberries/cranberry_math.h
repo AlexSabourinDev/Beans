@@ -32,6 +32,7 @@
 #include <immintrin.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 
 #define cran_inline inline
 #define cran_forceinline __forceinline
@@ -265,6 +266,8 @@ cran_forceinline cv2 cu2_to_cv2(cu2 v);
 cran_forceinline c16i2 cv2_to_c16i2(cv2 v);
 cran_forceinline cv2 c16i2_to_cv2(c16i2 v);
 
+cran_forceinline void cv2_store(float* out, cv2 v);
+
 // V3 API
 cran_forceinline cv3 cv3_mulf(cv3 l, float r);
 cran_forceinline cv3 cv3_add(cv3 l, cv3 r);
@@ -309,6 +312,8 @@ cran_forceinline cv3 cv3_f16_to_f32(ch3 f16);
 cran_forceinline c16i3 cv3_to_c16i3(cv3 v);
 cran_forceinline cv3 c16i3_to_cv3(c16i3 v);
 
+cran_forceinline void cv3_store(float* out, cv3 v);
+
 // V3 Lane API
 cran_forceinline cv3l cv3l_replicate(cv3 v);
 cran_forceinline void cv3l_set(cv3l* lanes, cv3 v, uint32_t i);
@@ -332,6 +337,8 @@ cran_forceinline cv4 cv4_f16_to_f32(ch4 f16);
 cran_forceinline c32u cv4_to_c32u(cv4 v);
 cran_forceinline cv4 c32u_to_cv4(c32u v);
 
+cran_forceinline void cv4_store(float* out, cv4 v);
+
 // Matrix API
 cran_forceinline cm3 cm3_rotate_xy(float theta);
 cran_forceinline cm3 cm3_from_basis(cv3 i, cv3 j, cv3 k);
@@ -349,9 +356,6 @@ cran_forceinline cm4 cm4_rotate_xy(float theta);
 cran_forceinline cm4 cm4_rotate_xz(float theta);
 cran_forceinline cm4 cm4_translate(cv3 pos);
 cran_forceinline cm4 cm4_mul(cm4 l, cm4 r);
-cran_forceinline cm4 cm4_perspective_projection(float fov, float nearPlane, float farPlane, float aspectRatio);
-cran_forceinline cm4 cm4_inv_perspective_projection(float fov, float nearPlane, float farPlane, float aspectRatio);
-cran_forceinline cm4 cm4_ortho_projection(cv2 extent, float nearPlane, float farPlane);
 
 // AABB API
 cran_forceinline bool caabb_does_ray_intersect(cv3 rayO, cv3 rayD, float rayMin, float rayMax, caabb aabb);
@@ -367,6 +371,15 @@ cran_forceinline cq cq_mul(cq left, cq right);
 cran_forceinline cv3 cq_rotate(cq rotator, cv3 point);
 cran_forceinline bool cq_is_normalized(cq q);
 cran_forceinline cq cq_euler(float yaw, float pitch, float roll);
+
+cran_forceinline void cq_store(float* out, cq v);
+
+// Projections API
+
+cran_forceinline cv4 perspective_projection_terms(float fov, float nearPlane, float farPlane, float aspectRatio);
+cran_forceinline cm4 cm4_perspective_projection(float fov, float nearPlane, float farPlane, float aspectRatio);
+cran_forceinline cm4 cm4_inv_perspective_projection(float fov, float nearPlane, float farPlane, float aspectRatio);
+cran_forceinline cm4 cm4_ortho_projection(cv2 extent, float nearPlane, float farPlane);
 
 enum
 {
@@ -735,6 +748,11 @@ cran_forceinline cv2 c16i2_to_cv2(c16i2 v)
     return (cv2){ (cf)v.x, (cf)v.y };
 }
 
+cran_forceinline void cv2_store(float* out, cv2 v)
+{
+    memcpy(out, &v.x, sizeof(cv2));
+}
+
 // V3 Implementation
 cran_forceinline cv3 cv3_mulf(cv3 l, float r)
 {
@@ -942,6 +960,11 @@ cran_forceinline cv3 c16i3_to_cv3(c16i3 v)
     return (cv3) { (cf)v.x, (cf)v.y, (cf)v.z };
 }
 
+cran_forceinline void cv3_store(float* out, cv3 v)
+{
+    memcpy(out, &v.x, sizeof(cv3));
+}
+
 // V3 Lane Implementation
 cran_forceinline cv3l cv3l_replicate(cv3 v)
 {
@@ -1088,6 +1111,11 @@ cran_forceinline cv4 c32u_to_cv4(c32u v)
 	return output;
 }
 
+cran_forceinline void cv4_store(float* out, cv4 v)
+{
+    memcpy(out, &v.x, sizeof(cv4));
+}
+
 // Matrix Implementation
 cran_forceinline cm3 cm3_rotate_xy(float theta)
 {
@@ -1230,19 +1258,25 @@ cran_forceinline cm4 cm4_mul(cm4 l, cm4 r)
 	return result;
 }
 
+cran_forceinline cv4 perspective_projection_terms(float fov, float nearPlane, float farPlane, float aspectRatio)
+{
+    return (cv4) { 1.0f / (fov * aspectRatio), 1.0f / fov, farPlane / (farPlane - nearPlane), -nearPlane * farPlane / (farPlane - nearPlane) };
+}
+
 cran_forceinline cm4 cm4_perspective_projection(float fov, float nearPlane, float farPlane, float aspectRatio)
 {
-	return (cm4){ fov / aspectRatio, 0.0f, 0.0f, 0.0f,
-                0.0f, fov, 0.0f, 0.0f,
-                0.0f, 0.0f, farPlane / (farPlane - nearPlane), -nearPlane * farPlane / (farPlane - nearPlane),
+    cv4 projectionTerms = perspective_projection_terms(fov, nearPlane, farPlane, aspectRatio);
+    return (cm4){ projectionTerms.x, 0.0f, 0.0f, 0.0f,
+                0.0f, projectionTerms.y, 0.0f, 0.0f,
+                0.0f, 0.0f, projectionTerms.z, projectionTerms.w,
                 0.0f, 0.0f, 1.0, 0.0f};
 }
 
 cran_forceinline cm4 cm4_inv_perspective_projection(float fov, float nearPlane, float farPlane, float aspectRatio)
 {
-	return (cm4){ aspectRatio / fov, 0.0f, 0.0f, 0.0f,
+    return (cm4){ aspectRatio / fov, 0.0f, 0.0f, 0.0f,
                 0.0f, -1.0f / fov, 0.0f, 0.0f,
-				0.0f, 0.0f, 0.0f, 1.0f,
+                0.0f, 0.0f, 0.0f, 1.0f,
                 0.0f, 0.0f, (farPlane - nearPlane) / (-nearPlane * farPlane), farPlane / (nearPlane * farPlane)};
 }
 
@@ -1442,10 +1476,14 @@ cran_forceinline cq cq_mul(cq left, cq right)
     };
 }
 
+// https://fgiesen.wordpress.com/2019/02/09/rotating-a-single-vector-using-a-quaternion/
 cran_forceinline cv3 cq_rotate(cq rotator, cv3 point)
 {
-    cq rotatedPoint = cq_mul(cq_mul(rotator, (cq){ point.x, point.y, point.z, 0.0f }), cq_inverse(rotator));
-    return (cv3){ rotatedPoint.x, rotatedPoint.y, rotatedPoint.z };
+    cv3 t = cv3_mulf((cv3) { rotator.x, rotator.y, rotator.z }, 2.0f);
+    t = cv3_cross(t, point);
+
+    cv3 res = cv3_add(point, cv3_mulf(t, rotator.w));
+    return cv3_add(res, cv3_cross((cv3) { rotator.x, rotator.y, rotator.z }, t));
 }
 
 static float cq_norm_squared(cq q)
@@ -1481,4 +1519,9 @@ cran_forceinline cq cq_euler(float yaw, float pitch, float roll)
 	cq const rollQuaternion = cq_axis_angle(cv3_forward, roll);
 
 	return cq_mul(cq_mul(yawQuaternion, pitchQuaternion), rollQuaternion);
+}
+
+cran_forceinline void cq_store(float* out, cq v)
+{
+    memcpy(out, &v.x, sizeof(cq));
 }

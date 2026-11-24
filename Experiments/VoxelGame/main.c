@@ -3,6 +3,7 @@
 #define SOKOL_IMPL
 #define SOKOL_NOAPI
 #include <sokol/sokol_app.h>
+#include <sokol/sokol_time.h>
 
 #include <iceberg/ib_core.h>
 #include <iceberg/ib_rendergraph.h>
@@ -10,6 +11,7 @@
 #include <cranberries/cranberry_math.h>
 
 #include "ShaderHeaders/clear_color.h"
+#include "ShaderHeaders/trace_voxels.h"
 
 LppDefaultAgent LivePPAgent;
 static bool initLivePP()
@@ -234,6 +236,7 @@ static void freeMesh(Mesh* mesh)
 // Mesh API End
 
 ib_ComputePipeline ClearColorShader;
+ib_ComputePipeline TraceVoxelsShader;
 
 static void readWholeFileFromHandle(FILE* file, void** output, size_t* outputSize)
 {
@@ -260,29 +263,8 @@ static bool readWholeFile(char const* path, void** output, size_t* outputSize)
     return false;
 }
 
-static void init(void)
+static void loadShaders(void)
 {
-    initLivePP();
-    initStackAllocator();
-
-    ib_initCore((ib_CoreDesc)
-                {
-                    .Win32MainWindowHandle = sapp_win32_get_hwnd(),
-                    .Win32MainInstanceHandle = GetModuleHandle(NULL)
-                },
-                &Core);
-    initGlobalBufferMemory(&Core);
-
-
-    ibr_initRenderGraphs(&Core, Graphs, ib_arrayCount(Graphs));
-    Surface = ib_allocWin32Surface(&Core, (ib_SurfaceDesc)
-                                   {
-                                       .Win32WindowHandle = sapp_win32_get_hwnd(),
-                                       .Win32InstanceHandle = GetModuleHandle(NULL),
-                                       .UseVSync = true,
-                                       .SRGB = true
-                                   });
-
     void* clearColorSpv;
     size_t clearColorSpvSize;
     readWholeFile("CompiledAssets/Shaders/clear_color.spv", &clearColorSpv, &clearColorSpvSize);
@@ -297,9 +279,55 @@ static void init(void)
                                 },
                                 .ShaderInputs =
                                 {
-                                    { ib_staticArrayRange(ClearColorInputs) }
+                                    { ib_staticArrayRange(sg_ClearColorInputs) }
                                 }
                             });
+
+    void* traceVoxelsSpv;
+    size_t traceVoxelsSpvSize;
+    readWholeFile("CompiledAssets/Shaders/trace_voxels.spv", &traceVoxelsSpv, &traceVoxelsSpvSize);
+    TraceVoxelsShader = ib_allocComputePipeline(&Core, (ib_ComputePipelineDesc)
+                            {
+                                .ShaderDesc = (ib_ShaderDesc)
+                                {
+                                    .EntryPoint = "CS",
+                                    .Code = traceVoxelsSpv,
+                                    .CodeSize = traceVoxelsSpvSize,
+                                    .Stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                                },
+                                .ShaderInputs =
+                                {
+                                    { ib_staticArrayRange(sg_TraceVoxelsInputs) }
+                                }
+                            });
+}
+
+static void init(void)
+{
+    stm_setup();
+
+    initLivePP();
+    initStackAllocator();
+
+    ib_initCore((ib_CoreDesc)
+                {
+                    .Win32MainWindowHandle = sapp_win32_get_hwnd(),
+                    .Win32MainInstanceHandle = GetModuleHandle(NULL)
+                },
+                &Core);
+    initGlobalBufferMemory(&Core);
+    loadShaders();
+
+    ibr_initRenderGraphs(&Core, Graphs, ib_arrayCount(Graphs));
+    Surface = ib_allocWin32Surface(&Core, (ib_SurfaceDesc)
+                                   {
+                                       .Win32WindowHandle = sapp_win32_get_hwnd(),
+                                       .Win32InstanceHandle = GetModuleHandle(NULL),
+                                       .UseVSync = true,
+                                       .SRGB = true
+                                   });
+
+    
 
     // Spin up a graph for GPU-side initialization
     ibr_RenderGraph* graph = beginRenderGraph(NULL);
@@ -334,6 +362,7 @@ static void kill(void)
     killGlobalBufferMemory(&Core);
 
     ib_freeComputePipeline(&Core, &ClearColorShader);
+    ib_freeComputePipeline(&Core, &TraceVoxelsShader);
     ib_freeSurface(&Core, &Surface);
     ib_killCore(&Core);
 
@@ -341,7 +370,33 @@ static void kill(void)
     killLivePP();
 }
 
-static void update(void)
+typedef struct
+{
+    cq Rotation;
+    cv3 Position;
+    float Scale;
+} Transform;
+
+Transform const identityTransform =
+{
+    .Rotation = { 0.0f, 0.0f, 0.0f, 1.0f },
+    .Scale = 1.0f
+};
+
+typedef struct
+{
+    Transform Transform;
+    float FOV;
+    float NearPlane;
+    float FarPlane;
+} CameraData;
+
+typedef struct
+{
+    CameraData Camera;
+} SceneFrameData;
+
+static void renderScene(SceneFrameData scene)
 {
     ibr_RenderGraph* graph = beginRenderGraph(&Surface);
     if (graph != NULL)
@@ -356,77 +411,130 @@ static void update(void)
         ibr_Resource renderOutput = ibr_allocPassResource(graph, commands,
             ibr_transientTextureResourceDesc(ibr_ScreenExtent, VK_FORMAT_R8G8B8A8_UNORM, ibr_TransientTextureFlag_StorageBit | ibr_TransientTextureFlag_TransferSrcBit, "Render Output"));
 
-        ibr_Resource clearColorConstants = ibr_allocTransientBufferResource(graph,
-                              commands,
-                              &(ClearColorConstants)
-                              {
-                                  .OutputDimensions = { graph->ScreenExtent.width, graph->ScreenExtent.height },
-                                  .Color = cv4_to_c32u((cv4) { 1.0f, 1.0f, 0.0f, 1.0f })
-                              },
-                              sizeof(ClearColorConstants), ibr_TransientBufferFlag_Device, "ClearColor Constants");
+        // Clear color renderpass
+        {
+            ibr_Resource clearColorConstants = ibr_allocTransientBufferResource(graph,
+                                                                                commands,
+                                                                                &(sg_ClearColorConstants)
+                                                                                {
+                                                                                    .OutputDimensions = { graph->ScreenExtent.width, graph->ScreenExtent.height },
+                                                                                    .Color = cv4_to_c32u((cv4) { 1.0f, 1.0f, 0.0f, 1.0f })
+                                                                                },
+                                                                                sizeof(sg_ClearColorConstants), ibr_TransientBufferFlag_Device, "ClearColor Constants");
 
-        ibr_beginComputePass(graph, commands, (ibr_BeginComputePassDesc)
-                              {
-                                  .ResourceStates =
-                                  {
-                                      ibr_textureState(&renderOutput, ibr_TextureState_Write, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
-                                      ibr_bufferState(&clearColorConstants, ibr_BufferState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
-                                  }
-                              });
-
-        ib_ShaderInput shaderData = ibr_resourcesToShaderInput(graph, (ibr_ResourceToShaderInputDesc)
-                                   {
-                                       .ShaderInputs = ClearColorInputs,
-                                       .Layout = &ClearColorShader.InlineShaderInputLayouts[0],
-                                       .Resources = ib_staticArrayRange((ibr_Resource*[])
-                                       {
-                                           [ClearColor_Output] = &renderOutput,
-                                           [ClearColor_Constants] = &clearColorConstants
-                                       })
-                                   });
-
-        ib_bindShaderInputToCompute(commands, &ClearColorShader, &shaderData);
-        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, ClearColorShader.VulkanPipeline);
-        vkCmdDispatch(commands, cu_div_ceil(graph->ScreenExtent.width, ClearColorThreadGroupSize.x), cu_div_ceil(graph->ScreenExtent.height, ClearColorThreadGroupSize.y), 1u);
-
-        ibr_endComputePass(graph, commands);
-
-        ibr_beginTransferPass(graph, commands, (ibr_BeginTransferPassDesc)
-                             {
-                                 .ResourceStates =
+            ibr_beginComputePass(graph, commands, (ibr_BeginComputePassDesc)
                                  {
-                                    ibr_textureState(&renderOutput, ibr_TextureState_TransferSrc, VK_PIPELINE_STAGE_TRANSFER_BIT),
-                                    ibr_textureState(&swapchainResource, ibr_TextureState_TransferDst, VK_PIPELINE_STAGE_TRANSFER_BIT)
-                                 },
-                                 .PassName = "CopyToSwapchain"
-                             });
+                                     .ResourceStates =
+                                     {
+                                         ibr_textureState(&renderOutput, ibr_TextureState_Write, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+                                         ibr_bufferState(&clearColorConstants, ibr_BufferState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+                                     }
+                                 });
 
-        vkCmdCopyImage2(commands, &(VkCopyImageInfo2)
-                        {
-                            .sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2,
-                            .srcImage = renderOutput.Texture->Image,
-                            .srcImageLayout = renderOutput.TextureLayout,
-                            .dstImage = swapchainResource.Texture->Image,
-                            .dstImageLayout = swapchainResource.TextureLayout,
-                            .regionCount = 1,
-                            .pRegions = &(VkImageCopy2)
+            ib_ShaderInput shaderData = ibr_resourcesToShaderInput(graph, (ibr_ResourceToShaderInputDesc)
+                                                                   {
+                                                                       .ShaderInputs = sg_ClearColorInputs,
+                                                                       .Layout = &ClearColorShader.InlineShaderInputLayouts[0],
+                                                                       .Resources = ib_staticArrayRange((ibr_Resource*[])
+                                                                                                        {
+                                                                                                            [ClearColor_Output] = &renderOutput,
+                                                                                                            [ClearColor_Constants] = &clearColorConstants
+                                                                                                        })
+                                                                   });
+
+            ib_bindShaderInputToCompute(commands, &ClearColorShader, &shaderData);
+            vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, ClearColorShader.VulkanPipeline);
+            vkCmdDispatch(commands, cu_div_ceil(graph->ScreenExtent.width, sg_ClearColorThreadGroupSize.x), cu_div_ceil(graph->ScreenExtent.height, sg_ClearColorThreadGroupSize.y), 1u);
+
+            ibr_endComputePass(graph, commands);
+        }
+
+        // Trace voxels
+        {
+            float aspectRatio = (float)graph->ScreenExtent.width / (float)graph->ScreenExtent.height;
+            cv4 projectionTerms = perspective_projection_terms(scene.Camera.FOV, scene.Camera.NearPlane, scene.Camera.FarPlane, aspectRatio);
+
+            sg_VoxelTraceConstants constants;
+            cq_store(constants.ViewToWorld.Rotation, scene.Camera.Transform.Rotation);
+            cv3_store(constants.ViewToWorld.Position, scene.Camera.Transform.Position);
+            constants.ViewToWorld.Scale = scene.Camera.Transform.Scale;
+
+            cv4 invProjectionTerms = (cv4) { 1.0f / projectionTerms.x, -1.0f / projectionTerms.y, projectionTerms.z, projectionTerms.w };
+            cv4_store(constants.InvProjection, invProjectionTerms);
+            constants.InvOutputDimensions[0] = 1.0f / (float)graph->ScreenExtent.width;
+            constants.InvOutputDimensions[1] = 1.0f / (float)graph->ScreenExtent.height;
+            ibr_Resource traceVoxelsConstants = ibr_allocTransientBufferResource(graph,
+                                                                                commands,
+                                                                                &constants,
+                                                                                sizeof(constants), ibr_TransientBufferFlag_Device, "TraceVoxels Constants");
+
+            ibr_beginComputePass(graph, commands, (ibr_BeginComputePassDesc)
+                                 {
+                                     .ResourceStates =
+                                     {
+                                         ibr_textureState(&renderOutput, ibr_TextureState_Write, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+                                         ibr_bufferState(&traceVoxelsConstants, ibr_BufferState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+                                     }
+                                 });
+
+            ib_ShaderInput shaderData = ibr_resourcesToShaderInput(graph, (ibr_ResourceToShaderInputDesc)
+                                                                   {
+                                                                       .ShaderInputs = sg_TraceVoxelsInputs,
+                                                                       .Layout = &TraceVoxelsShader.InlineShaderInputLayouts[0],
+                                                                       .Resources = ib_staticArrayRange((ibr_Resource*[])
+                                                                                                        {
+                                                                                                            [TraceVoxels_Output] = &renderOutput,
+                                                                                                            [TraceVoxels_Constants] = &traceVoxelsConstants
+                                                                                                        })
+                                                                   });
+
+            ib_bindShaderInputToCompute(commands, &TraceVoxelsShader, &shaderData);
+            vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, TraceVoxelsShader.VulkanPipeline);
+            vkCmdDispatch(commands, cu_div_ceil(graph->ScreenExtent.width, sg_TraceVoxelsThreadGroupSize.x), cu_div_ceil(graph->ScreenExtent.height, sg_TraceVoxelsThreadGroupSize.y), 1u);
+
+            ibr_endComputePass(graph, commands);
+        }
+
+
+        // Render output to swapchain
+        {
+            ibr_beginTransferPass(graph, commands, (ibr_BeginTransferPassDesc)
+                                  {
+                                      .ResourceStates =
+                                      {
+                                          ibr_textureState(&renderOutput, ibr_TextureState_TransferSrc, VK_PIPELINE_STAGE_TRANSFER_BIT),
+                                          ibr_textureState(&swapchainResource, ibr_TextureState_TransferDst, VK_PIPELINE_STAGE_TRANSFER_BIT)
+                                      },
+                                      .PassName = "CopyToSwapchain"
+                                  });
+
+            vkCmdCopyImage2(commands, &(VkCopyImageInfo2)
                             {
-                                .sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2,
-                                .srcSubresource = (VkImageSubresourceLayers)
+                                .sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2,
+                                .srcImage = renderOutput.Texture->Image,
+                                .srcImageLayout = renderOutput.TextureLayout,
+                                .dstImage = swapchainResource.Texture->Image,
+                                .dstImageLayout = swapchainResource.TextureLayout,
+                                .regionCount = 1,
+                                .pRegions = &(VkImageCopy2)
                                 {
-                                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                    .layerCount = 1u,
-                                },
-                                .dstSubresource = (VkImageSubresourceLayers)
-                                {
-                                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                    .layerCount = 1u,
-                                },
-                                .extent = renderOutput.Texture->Extent
-                            }
-                        });
+                                    .sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2,
+                                    .srcSubresource = (VkImageSubresourceLayers)
+                                    {
+                                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                        .layerCount = 1u,
+                                    },
+                                    .dstSubresource = (VkImageSubresourceLayers)
+                                    {
+                                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                        .layerCount = 1u,
+                                    },
+                                    .extent = renderOutput.Texture->Extent
+                                }
+                            });
 
-        ibr_endTransferPass(graph, commands);
+            ibr_endTransferPass(graph, commands);
+        }
 
         ibr_barriers(graph, commands, (ibr_BarriersDesc)
                      {
@@ -450,11 +558,52 @@ static void update(void)
     }
 }
 
+const Transform SceneCameraTransform =
+{
+    .Scale = 1.0f,
+};
+
+static void update(void)
+{
+    SceneFrameData sceneFrameData = (SceneFrameData){0};
+    sceneFrameData.Camera.FOV = tanf(1.22173f * 0.5f);
+    sceneFrameData.Camera.NearPlane = 0.1f;
+    sceneFrameData.Camera.FarPlane = 1000.0f;
+    sceneFrameData.Camera.Transform = SceneCameraTransform;
+    sceneFrameData.Camera.Transform.Rotation = cq_axis_angle((cv3) { 0.0f, 1.0f, 0.0f }, (float)stm_sec(stm_now()) * 0.5f);
+    renderScene(sceneFrameData);
+}
+
+static void events(sapp_event const* event)
+{
+    if (event->type == SAPP_EVENTTYPE_RESIZED)
+    {
+        ib_rebuildSurface(&Core, &Surface);
+    }
+    else if (event->type == SAPP_EVENTTYPE_KEY_DOWN)
+    {
+        if (event->key_code == SAPP_KEYCODE_R)
+        {
+            vkDeviceWaitIdle(Core.LogicalDevice);
+
+            char CurrentWorkingDirectory[256];
+            GetCurrentDirectoryA(ib_arrayCount(CurrentWorkingDirectory), CurrentWorkingDirectory);
+            char shaderCompilation[1024];
+            snprintf(shaderCompilation, ib_arrayCount(shaderCompilation), "py %s/../Python/compile_voxel_game_assets.py -only_shaders=True\n", CurrentWorkingDirectory);
+            printf("Running: %s\n", shaderCompilation);
+            system(shaderCompilation);
+
+            loadShaders();
+        }
+    }
+}
+
 sapp_desc sokol_main(int argc, char* argv[]) {
     return (sapp_desc) {
         .init_cb = &init,
         .frame_cb = &update,
         .cleanup_cb = &kill,
+        .event_cb = &events,
         .win32.console_attach = true,
         .window_title = "Voxel Game"
     };

@@ -149,7 +149,7 @@ void printType(FILE *file, SpvReflectTypeDescription* sourceType)
 {
     if (sourceType->type_flags & SPV_REFLECT_TYPE_FLAG_STRUCT)
     {
-        fprintf(file, "typedef struct %s\n", sanitizeTypeName(sourceType->type_name));
+        fprintf(file, "typedef struct sg_%s\n", sanitizeTypeName(sourceType->type_name));
         fprintf(file, "{\n");
         for (uint32_t i = 0; i < sourceType->member_count; i++)
         {
@@ -188,14 +188,14 @@ void printType(FILE *file, SpvReflectTypeDescription* sourceType)
             }
             else if (member->type_flags & SPV_REFLECT_TYPE_FLAG_STRUCT)
             {
-                fprintf(file, "\t%s %s;\n", sanitizeTypeName(member->type_name), member->struct_member_name);
+                fprintf(file, "\tsg_%s %s;\n", sanitizeTypeName(member->type_name), member->struct_member_name);
             }
             else
             {
                 assert(false);
             }
         }
-        fprintf(file, "} %s;\n", sanitizeTypeName(sourceType->type_name));
+        fprintf(file, "} sg_%s;\n", sanitizeTypeName(sourceType->type_name));
         fprintf(file, "\n");
     }
 }
@@ -246,17 +246,17 @@ int main(int argc, char* argv[])
 
     // Print input bindings
     {
-        fprintf(outputHeader, "typedef enum %sInputEnum\n", pipelineName);
+        fprintf(outputHeader, "typedef enum sg_%sInputEnum\n", pipelineName);
         fprintf(outputHeader, "{\n");
         for (uint32_t i = 0; i < descriptorBindingCount; i++)
         {
             fprintf(outputHeader, "\t%s_%s = %u,\n", pipelineName, descriptorBindings[i]->name, i);
         }
-        fprintf(outputHeader, "} %sInputEnum;\n", pipelineName);
+        fprintf(outputHeader, "} sg_%sInputEnum;\n", pipelineName);
 
         fprintf(outputHeader, "\n");
 
-        fprintf(outputHeader, "static ib_ShaderInputDesc const %sInputs[] = \n", pipelineName);
+        fprintf(outputHeader, "static ib_ShaderInputDesc const sg_%sInputs[] = \n", pipelineName);
         fprintf(outputHeader, "{\n");
         for (uint32_t i = 0; i < descriptorBindingCount; i++)
         {
@@ -284,7 +284,7 @@ int main(int argc, char* argv[])
 
     if (module.spirv_execution_model == SpvExecutionModelGLCompute)
     {
-        fprintf(outputHeader, "const struct { uint32_t x, y, z; } %sThreadGroupSize = { %u, %u, %u };\n",
+        fprintf(outputHeader, "const struct { uint32_t x, y, z; } sg_%sThreadGroupSize = { %u, %u, %u };\n",
             pipelineName,
             module.entry_points[0].local_size.x, module.entry_points[0].local_size.y, module.entry_points[0].local_size.z);
     }
