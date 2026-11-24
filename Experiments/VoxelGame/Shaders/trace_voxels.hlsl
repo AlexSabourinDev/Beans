@@ -63,7 +63,7 @@ struct VoxelTraceConstants
 };
 
 // https://www.researchgate.net/publication/233899848_Efficient_implementation_of_the_3D-DDA_ray_traversal_algorithm_on_GPU_and_its_application_in_radiation_dose_calculation
-void dda(float3 rayDir, float3 invRayDir, inout float3 voxel, inout float3 rayTracking)
+float dda(float3 rayDir, float3 invRayDir, inout float3 voxel, inout float3 rayTracking)
 {
     float minDist = min(min(rayTracking.x, rayTracking.y), rayTracking.z);
 
@@ -82,6 +82,8 @@ void dda(float3 rayDir, float3 invRayDir, inout float3 voxel, inout float3 rayTr
         rayTracking.z += abs(invRayDir.z);
         voxel.z += rayDir.z > 0.0 ? 1.0 : -1.0;
     }
+
+    return minDist;
 }
 
 [[vk::binding(0)]] RWTexture2D<float4> Output;
@@ -108,14 +110,34 @@ void CS(uint2 dispatchThreadID : SV_DispatchThreadID)
     float3 voxel = floor(origin);
     for (int i = 0; i < 64; i++)
     {
+        float rayT = dda(viewDir, 1.0f / viewDir, voxel, rayTracking);
         int3 intVoxel = (int3)voxel;
         if (intVoxel.y == -5 && intVoxel.x % 2 && intVoxel.z % 2)
         {
-            Output[dispatchThreadID] = 0.5f;
+            float3 voxelOrigin = voxel + 0.5f;
+
+            float3 hitPos = origin + rayT * viewDir;
+            float3 voxelToHit = hitPos - voxelOrigin;
+
+            float maxComponent = max(abs(voxelToHit.x), max(abs(voxelToHit.y), abs(voxelToHit.z)));
+            float3 normal;
+            if (abs(voxelToHit.x) == maxComponent)
+            {
+                normal = float3(sign(voxelToHit.x), 0.0f, 0.0f);
+            }
+            else if (abs(voxelToHit.y) == maxComponent)
+            {
+                normal = float3(0.0f, sign(voxelToHit.y), 0.0f);
+            }
+            else if (abs(voxelToHit.z) == maxComponent)
+            {
+                normal = float3(0.0f, 0.0f, sign(voxelToHit.z));
+            }
+
+            Output[dispatchThreadID] = float4(normal, 1.0f);
             return;
         }
-        dda(viewDir, 1.0f / viewDir, voxel, rayTracking);
     }
 
-    Output[dispatchThreadID] = float4(viewDir, 0.0f);
+    Output[dispatchThreadID] = float4(viewDir, 1.0f);
 }
