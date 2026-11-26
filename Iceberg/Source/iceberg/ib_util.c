@@ -48,7 +48,7 @@ uint32_t ib_firstBitLowU32(uint32_t value)
 	return index;
 }
 
-uint32_t ib_bitCountU64(uint32_t value)
+uint32_t ib_bitCountU32(uint32_t value)
 {
 	return (uint32_t)_mm_popcnt_u64(value);
 }
@@ -68,7 +68,7 @@ uint32_t ib_firstBitLowU64(uint64_t value)
 	return index;
 }
 
-uint32_t ib_bitCountU32(uint64_t value)
+uint32_t ib_bitCountU64(uint64_t value)
 {
 	return (uint32_t)_mm_popcnt_u64(value);
 }

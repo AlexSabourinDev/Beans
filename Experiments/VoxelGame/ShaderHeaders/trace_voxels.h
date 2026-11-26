@@ -6,13 +6,20 @@ typedef enum sg_TraceVoxelsInputEnum
 {
 	TraceVoxels_Output = 0,
 	TraceVoxels_Constants = 1,
+	TraceVoxels_VoxelPageBitmasks = 2,
 } sg_TraceVoxelsInputEnum;
 
 static ib_ShaderInputDesc const sg_TraceVoxelsInputs[] = 
 {
 	{ .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .UseImmutableSamplers = false },
 	{ .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .UseImmutableSamplers = false },
+	{ .Shaders = VK_SHADER_STAGE_COMPUTE_BIT, .Type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .UseImmutableSamplers = false },
 };
+
+typedef struct sg_uint
+{
+	uint32_t (null);
+} sg_uint;
 
 typedef struct sg_Transform
 {

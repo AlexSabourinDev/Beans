@@ -13,6 +13,8 @@
 #include "ShaderHeaders/clear_color.h"
 #include "ShaderHeaders/trace_voxels.h"
 
+#include <math.h>
+
 LppDefaultAgent LivePPAgent;
 static bool initLivePP()
 {
@@ -81,159 +83,205 @@ ibr_RenderGraph* beginRenderGraph(ib_Surface* surface)
     return frameBegun ? graph : NULL;
 }
 
-// Global buffer memory pool begin
+// Voxel Page API
 
-static size_t const GlobalBufferMemorySize = 1024u * 1024u * 32u; // 32 MB of global buffer memory.
-static ib_Buffer GlobalBufferMemory;
-static iba_TlsfAllocator GlobalBufferMemoryAllocator;
-
-static void initGlobalBufferMemory(ib_Core* core)
+uint32_t spreadThirdBits_256(uint32_t bits)
 {
-     GlobalBufferMemory = ib_allocBuffer(core, (ib_BufferDesc)
-                   {
-                       .Usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                       .Size = GlobalBufferMemorySize,
-                       .RequiredMemoryFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-                       .DebugName = "Global Buffer",
-                       .AllocationType = iba_GpuAllocationType_Device,
-                   });
-    iba_initTlsfAllocator(&GlobalBufferMemoryAllocator);
-    iba_tlsfAddRoot(&GlobalBufferMemoryAllocator, 0u, GlobalBufferMemorySize);
+    // Spread bits recursively by doing:
+    // 012 345 67x xxx xxx xxx xxx xxx
+    // 012 3xx xxx xxx 456 7xx xxx xxx
+    // 01x xxx 23x xxx 45x xxx 67x xxx
+    // 0xx 1xx 2xx 3xx 4xx 5xx 6xx 7xx
+
+    // we can do this with shifts like:
+    // x = ((x << 8) | x) & 0x00F00F
+    // x = ((x << 4) | x) & 003030303
+    // x = ((x << 2) | x) & 011111111
+
+    // (Interestingly, octal makkes easier masks here)
+
+    // But actually, we can use a multiply instead of a shift and or:
+    bits = (bits * 0x0101) & 0x00F00F;
+    bits = (bits * 0x11) & 003030303;
+    bits = (bits * 0x5) & 011111111;
+
+    return bits;
 }
 
-static void killGlobalBufferMemory(ib_Core* core)
+uint32_t spreadThirdBits_16(uint32_t bits)
 {
-    iba_killTlsfAllocator(&GlobalBufferMemoryAllocator);
-    ib_freeBuffer(core, &GlobalBufferMemory);
+    // Spread bits recursively by doing:
+    // 012 3xx xxx xxx
+    // 01x xxx 23x xxx
+    // 0xx 1xx 2xx 3xx
+
+    // we can do this with shifts like:
+    // x = ((x << 4) | x) & 003030303
+    // x = ((x << 2) | x) & 011111111
+
+    // (Interestingly, octal makkes easier masks here)
+
+    // But actually, we can use a multiply instead of a shift and or:
+    bits = (bits * 0x11) & 00303;
+    bits = (bits * 0x5) & 01111;
+    return bits;
+}
+
+uint32_t zCurve3D_256(cu3 indices)
+{
+    return spreadThirdBits_256(indices.x)
+        | (spreadThirdBits_256(indices.y) << 1u)
+        | (spreadThirdBits_256(indices.z) << 2u);
+}
+
+uint32_t zCurve3D_16(cu3 indices)
+{
+    return spreadThirdBits_16(indices.x)
+        | (spreadThirdBits_16(indices.y) << 1u)
+        | (spreadThirdBits_16(indices.z) << 2u);
+}
+
+typedef struct Bitset
+{
+    uint64_t* Data;
+    uint32_t Size;
+} Bitset;
+
+const uint32_t bitset_IndexToBitShift = 6u;
+const uint32_t bitset_IndexBitMask = 63u;
+
+void bitset_init(Bitset* bitset)
+{
+    memset(bitset->Data, 0, sizeof(uint64_t) * bitset->Size);
+}
+
+uint32_t bitset_alloc(Bitset* bitset)
+{
+    for (uint32_t i = 0; i < bitset->Size; i++)
+    {
+        uint64_t freeBits = ~bitset->Data[i];
+        if (freeBits != 0u)
+        {
+            uint32_t allocIndex = ib_firstBitLowU64(freeBits);
+            bitset->Data[i] = bitset->Data[i] | (1ull << allocIndex);
+            return allocIndex + (i << bitset_IndexToBitShift);
+        }
+    }
+    return UINT_MAX;
+}
+
+void bitset_set(Bitset* bitset, uint32_t index)
+{
+    uint32_t arrayIndex = index >> bitset_IndexToBitShift;
+    uint32_t bitIndex = index & bitset_IndexBitMask;
+    bitset->Data[arrayIndex] = bitset->Data[arrayIndex] | (1ull << bitIndex);
+}
+
+bool bitset_isSet(Bitset* bitset, uint32_t index)
+{
+    uint32_t arrayIndex = index >> bitset_IndexToBitShift;
+    uint32_t bitIndex = index & bitset_IndexBitMask;
+    return (bitset->Data[arrayIndex] & (1ull << bitIndex)) != 0u;
+}
+
+void bitset_free(Bitset* bitset, uint32_t freeIndex)
+{
+    uint32_t arrayIndex = freeIndex >> bitset_IndexToBitShift;
+    uint32_t bitIndex = freeIndex & bitset_IndexBitMask;
+    bitset->Data[arrayIndex] = bitset->Data[arrayIndex] & (~(1ull << bitIndex));
+}
+
+#define vox_BrickWidth 8u
+#define vox_BrickWidthBitShift 3u
+#define vox_BrickWidthBitMask 7u
+#define vox_PageWidth 64u
+static uint32_t const vox_PageSize = vox_PageWidth * vox_PageWidth * vox_PageWidth;
+
+typedef struct vox_Page
+{
+    Bitset AllocatedBricks;
+    uint32_t* BrickIndices;
+} vox_Page;
+
+typedef struct vox_Brick
+{
+    uint64_t Voxels;
+} vox_Brick;
+
+static vox_Brick* BrickPool;
+static Bitset BrickPoolAllocator;
+static vox_Page TempPage;
+
+static void vox_init()
+{
+    BrickPool = (vox_Brick*)malloc(sizeof(vox_Brick) * vox_PageSize);
+    BrickPoolAllocator = (Bitset)
+    {
+        .Data = (uint64_t*)malloc(sizeof(uint64_t) * (vox_PageSize >> bitset_IndexToBitShift)),
+        .Size = vox_PageSize >> bitset_IndexToBitShift
+    };
+    bitset_init(&BrickPoolAllocator);
+
+    TempPage = (vox_Page)
+    {
+        .AllocatedBricks = (Bitset)
+        {
+            .Data = (uint64_t*)malloc(sizeof(uint64_t) * (vox_PageSize >> bitset_IndexToBitShift)),
+            .Size = vox_PageSize >> bitset_IndexToBitShift
+        },
+        .BrickIndices = (uint32_t*)malloc(sizeof(uint32_t) * vox_PageSize)
+    };
+    bitset_init(&TempPage.AllocatedBricks);
+}
+
+static void vox_kill()
+{
+    free(BrickPool);
+    free(BrickPoolAllocator.Data);
+    free(TempPage.AllocatedBricks.Data);
+    free(TempPage.BrickIndices);
+}
+
+static void vox_sinWaveHeightField(vox_Page* page, float voxelWorldWidth, float sinFrequency, float sinAmplitude, float heightBase)
+{
+    uint32_t pageWidthInVoxels = vox_BrickWidth * vox_PageWidth;
+    for (uint32_t x = 0; x < pageWidthInVoxels; x++)
+    {
+        for (uint32_t y = 0; y < pageWidthInVoxels; y++)
+        {
+            for (uint32_t z = 0; z < pageWidthInVoxels; z++)
+            {
+                cv3 voxelCenter =
+                {
+                    ((float)x + 0.5f) * voxelWorldWidth,
+                    ((float)y + 0.5f) * voxelWorldWidth,
+                    ((float)z + 0.5f) * voxelWorldWidth,
+                };
+
+                float waveHeight = sinf(voxelCenter.x * sinFrequency) * sinAmplitude + heightBase;
+
+                if (voxelCenter.y <= waveHeight)
+                {
+                    cu3 brickId = { x >> vox_BrickWidthBitShift, y >> vox_BrickWidthBitShift, z >> vox_BrickWidthBitShift };
+                    uint32_t brickIndex = zCurve3D_256(brickId);
+                    if (!bitset_isSet(&page->AllocatedBricks, brickIndex))
+                    {
+                        page->BrickIndices[brickIndex] = bitset_alloc(&BrickPoolAllocator);
+                        bitset_set(&page->AllocatedBricks, brickIndex);
+                    }
+
+                    vox_Brick* brick = &BrickPool[page->BrickIndices[brickIndex]];
+
+                    cu3 localVoxelId = { x & vox_BrickWidthBitMask, y & vox_BrickWidthBitMask, z & vox_BrickWidthBitMask };
+                    uint32_t localVoxelIndex = zCurve3D_16(localVoxelId);
+                    brick->Voxels = brick->Voxels | (1ull << localVoxelIndex);
+                }
+            }
+        }
+    }
 }
 
 // Global buffer memory pool end
-
-// Mesh API Begin
-
-typedef struct
-{
-    uint16_t* Indices;
-    c16i3* Positions;
-    c16i2* Normals;
-    cv2* UVs;
-    uint32_t IndexCount;
-    uint32_t VertexCount;
-} MeshDesc;
-
-// Quantization: https://cbloomrants.blogspot.com/2020/09/topics-in-quantization-for-games.html
-static c16i3 packPosition(cv3 pos)
-{
-    float const posFixedPointScale = exp2f(7.0f);
-    // Rescale such that position is fixed point 8.7
-    // As a result, 1 is 1/128 and 128 is 1
-    pos = cv3_mulf(pos, posFixedPointScale);
-    return cv3_to_c16i3(pos);
-}
-
-static c16i2 packNormal(cv3 normal)
-{
-    float const normalFixedPointScale = exp2f(15.0f);
-    // Rescale such that normal is fixed point 1.15
-    cv2 octahedral = cv3_to_octahedral(normal);
-    ib_assert(octahedral.x >= 0.0f && octahedral.y >= 0.0f);
-    ib_assert(octahedral.x <= 1.0f && octahedral.y <= 1.0f);
-    octahedral = cv2_mulf(octahedral, normalFixedPointScale);
-    return cv2_to_c16i2(octahedral);
-}
-
-static MeshDesc createPlane(float width)
-{
-    MeshDesc mesh = {0};
-    uint32_t quadCount = 1u;
-    uint32_t indexCount = quadCount * 6;
-    uint32_t vertexCount = quadCount * 4;
-
-    mesh.Indices = (uint16_t*)transientAlloc(indexCount * sizeof(uint16_t), alignof(uint16_t));
-    mesh.Positions = (c16i3*)transientAlloc(vertexCount * sizeof(c16i3), alignof(c16i3));
-    mesh.Normals = (c16i2*)transientAlloc(vertexCount * sizeof(c16i2), alignof(c16i2));
-    mesh.UVs = (cv2*)transientAlloc(vertexCount * sizeof(cv2), alignof(cv2));
-    mesh.IndexCount = indexCount;
-    mesh.VertexCount = vertexCount;
-
-    float halfWidth = width * 0.5f;
-    cv3 pos[] =
-    {
-        (cv3) { -halfWidth, -halfWidth, 0.0f },
-        (cv3) { halfWidth, -halfWidth, 0.0f },
-        (cv3) { -halfWidth, halfWidth, 0.0f },
-        (cv3) { halfWidth, halfWidth, 0.0f },
-    };
-
-    cv2 uv[] =
-    {
-        (cv2) { 0.0f, 0.0f },
-        (cv2) { 1.0f, 0.0f },
-        (cv2) { 0.0f, 1.0f },
-        (cv2) { 1.0f, 1.0f },
-    };
-
-    uint16_t quadIndices[6] = { 0, 1, 3, 0, 3, 2 };
-    for (uint32_t i = 0; i < 6; i++)
-    {
-        mesh.Indices[i] = quadIndices[i];
-    }
-
-    for (uint32_t i = 0; i < 4; i++)
-    {
-        mesh.Positions[i] = packPosition(pos[i]);
-        mesh.Normals[i] = packNormal((cv3){0.0f, 0.0f, 1.0f});
-        mesh.UVs[i] = uv[i];
-    }
-
-    return mesh;
-}
-
-typedef struct
-{
-    iba_TlsfAllocation Alloc;
-    uint32_t IndexCount;
-    uint32_t VertexCount;
-} Mesh;
-
-static Mesh allocMesh(MeshDesc desc)
-{
-    Mesh mesh;
-
-    uint32_t indexSize = sizeof(uint16_t) * desc.IndexCount;
-    uint32_t positionSize = sizeof(c16i3) * desc.VertexCount;
-    uint32_t normalSize = sizeof(c16i2) * desc.VertexCount;
-    uint32_t uvSize = sizeof(cv2) * desc.VertexCount;
-    uint32_t allocationSize = indexSize + positionSize + normalSize + uvSize;
-    mesh.Alloc = iba_tlsfAlloc(&GlobalBufferMemoryAllocator, allocationSize, alignof(float));
-
-    uint32_t writeOffset = (uint32_t)mesh.Alloc.Offset;
-    memcpy(GlobalBufferMemory.Allocation.CPUMemory + writeOffset, desc.Indices, indexSize);
-    writeOffset += indexSize;
-
-    memcpy(GlobalBufferMemory.Allocation.CPUMemory + writeOffset, desc.Positions, positionSize);
-    writeOffset += positionSize;
-
-    memcpy(GlobalBufferMemory.Allocation.CPUMemory + writeOffset, desc.Normals, normalSize);
-    writeOffset += normalSize;
-
-    // Align on 4 byte boundary.
-    uint32_t alignementMask = sizeof(float) - 1;
-    writeOffset = (writeOffset + alignementMask) & ~alignementMask;
-    memcpy(GlobalBufferMemory.Allocation.CPUMemory + writeOffset, desc.UVs, uvSize);
-
-    mesh.IndexCount = desc.IndexCount;
-    mesh.VertexCount = desc.VertexCount;
-
-    return mesh;
-}
-
-static void freeMesh(Mesh* mesh)
-{
-    iba_tlsfFree(&GlobalBufferMemoryAllocator, mesh->Alloc.Block);
-}
-
-// Mesh API End
 
 ib_ComputePipeline ClearColorShader;
 ib_ComputePipeline TraceVoxelsShader;
@@ -315,7 +363,6 @@ static void init(void)
                     .Win32MainInstanceHandle = GetModuleHandle(NULL)
                 },
                 &Core);
-    initGlobalBufferMemory(&Core);
     loadShaders();
 
     ibr_initRenderGraphs(&Core, Graphs, ib_arrayCount(Graphs));
@@ -351,15 +398,19 @@ static void init(void)
         ibr_endUpload(graph);
         ibr_endFrame(graph);
     }
+
+    vox_init();
+    vox_sinWaveHeightField(&TempPage, 0.125f, 0.75f, 1.5f, 4.0f);
 }
 
 static void kill(void)
 {
+    vox_kill();
+
     vkDeviceWaitIdle(Core.LogicalDevice);
 
+    ibr_killDefaultResources(&Core, &DefaultResources);
     ibr_killRenderGraphs(&Core, Graphs, ib_arrayCount(Graphs));
-
-    killGlobalBufferMemory(&Core);
 
     ib_freeComputePipeline(&Core, &ClearColorShader);
     ib_freeComputePipeline(&Core, &TraceVoxelsShader);
@@ -377,7 +428,7 @@ typedef struct
     float Scale;
 } Transform;
 
-Transform const identityTransform =
+Transform const IdentityTransform =
 {
     .Rotation = { 0.0f, 0.0f, 0.0f, 1.0f },
     .Scale = 1.0f
@@ -420,7 +471,7 @@ static void renderScene(SceneFrameData scene)
                                                                                     .OutputDimensions = { graph->ScreenExtent.width, graph->ScreenExtent.height },
                                                                                     .Color = cv4_to_c32u((cv4) { 1.0f, 1.0f, 0.0f, 1.0f })
                                                                                 },
-                                                                                sizeof(sg_ClearColorConstants), ibr_TransientBufferFlag_Device, "ClearColor Constants");
+                                                                                sizeof(sg_ClearColorConstants), ibr_TransientBufferFlag_UniformBufferBit | ibr_TransientBufferFlag_Device, "ClearColor Constants");
 
             ibr_beginComputePass(graph, commands, (ibr_BeginComputePassDesc)
                                  {
@@ -433,7 +484,7 @@ static void renderScene(SceneFrameData scene)
 
             ib_ShaderInput shaderData = ibr_resourcesToShaderInput(graph, (ibr_ResourceToShaderInputDesc)
                                                                    {
-                                                                       .ShaderInputs = sg_ClearColorInputs,
+                                                                       .ShaderInputs = ib_staticArrayRange(sg_ClearColorInputs),
                                                                        .Layout = &ClearColorShader.InlineShaderInputLayouts[0],
                                                                        .Resources = ib_staticArrayRange((ibr_Resource*[])
                                                                                                         {
@@ -466,7 +517,14 @@ static void renderScene(SceneFrameData scene)
             ibr_Resource traceVoxelsConstants = ibr_allocTransientBufferResource(graph,
                                                                                 commands,
                                                                                 &constants,
-                                                                                sizeof(constants), ibr_TransientBufferFlag_Device, "TraceVoxels Constants");
+                                                                                sizeof(constants), ibr_TransientBufferFlag_UniformBufferBit | ibr_TransientBufferFlag_Device, "TraceVoxels Constants");
+
+            ibr_Resource tracePageBitmask = ibr_allocTransientBufferResource(graph,
+                                                                                commands,
+                                                                                TempPage.AllocatedBricks.Data,
+                                                                                sizeof(uint64_t) * TempPage.AllocatedBricks.Size, ibr_TransientBufferFlag_StorageBufferBit | ibr_TransientBufferFlag_Device, "PageBitmask");
+
+
 
             ibr_beginComputePass(graph, commands, (ibr_BeginComputePassDesc)
                                  {
@@ -474,17 +532,19 @@ static void renderScene(SceneFrameData scene)
                                      {
                                          ibr_textureState(&renderOutput, ibr_TextureState_Write, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
                                          ibr_bufferState(&traceVoxelsConstants, ibr_BufferState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+                                         ibr_bufferState(&tracePageBitmask, ibr_BufferState_Read, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
                                      }
                                  });
 
             ib_ShaderInput shaderData = ibr_resourcesToShaderInput(graph, (ibr_ResourceToShaderInputDesc)
                                                                    {
-                                                                       .ShaderInputs = sg_TraceVoxelsInputs,
+                                                                       .ShaderInputs = ib_staticArrayRange(sg_TraceVoxelsInputs),
                                                                        .Layout = &TraceVoxelsShader.InlineShaderInputLayouts[0],
                                                                        .Resources = ib_staticArrayRange((ibr_Resource*[])
                                                                                                         {
                                                                                                             [TraceVoxels_Output] = &renderOutput,
-                                                                                                            [TraceVoxels_Constants] = &traceVoxelsConstants
+                                                                                                            [TraceVoxels_Constants] = &traceVoxelsConstants,
+                                                                                                            [TraceVoxels_VoxelPageBitmasks] = &tracePageBitmask,
                                                                                                         })
                                                                    });
 
@@ -560,6 +620,8 @@ static void renderScene(SceneFrameData scene)
 
 const Transform SceneCameraTransform =
 {
+    .Position = { 32.0f, 16.0f, 16.0f },
+    .Rotation = { 0.0f, 0.0f, 0.0f, 1.0f },
     .Scale = 1.0f,
 };
 

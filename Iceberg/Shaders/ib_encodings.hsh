@@ -4,99 +4,99 @@
 #define IB_ENCODINGS_H
 
 // https://knarkowicz.wordpress.com/2014/04/16/octahedron-normal-vector-encoding/
-float2 octahedralWrap( float2 v )
+float2 octahedralWrap(float2 v)
 {
-	float2 result;
-	result.x = (1.0f - abs(v.y)) * (v.x >= 0.0f ? 1.0f : -1.0f);
-	result.y = (1.0f - abs(v.x)) * (v.y >= 0.0f ? 1.0f : -1.0f);
-	return result;
+    float2 result;
+    result.x = (1.0f - abs(v.y)) * (v.x >= 0.0f ? 1.0f : -1.0f);
+    result.y = (1.0f - abs(v.x)) * (v.y >= 0.0f ? 1.0f : -1.0f);
+    return result;
 }
 
 float2 toSquareOctahedral(float3 dir)
 {
-	dir.xy = dir.xy * rcp( abs( dir.x ) + abs( dir.y ) + abs( dir.z ) );
-	float2 results = dir.z >= 0.0f ? dir.xy : octahedralWrap( dir.xy );
-	results = mad(results, 0.5f, 0.5f);
-	return results;
+    dir.xy = dir.xy * rcp(abs(dir.x) + abs(dir.y) + abs(dir.z));
+    float2 results = dir.z >= 0.0f ? dir.xy : octahedralWrap(dir.xy);
+    results = mad(results, 0.5f, 0.5f);
+    return results;
 }
 
 float3 fromSquareOctahedral(float2 oct)
 {
-	oct = mad(oct, 2.0f, -1.0f);
+    oct = mad(oct, 2.0f, -1.0f);
  
-	// https://twitter.com/Stubbesaurus/status/937994790553227264
-	float3 n = float3(oct.x, oct.y, 1.0f - abs(oct.x) - abs(oct.y));
-	float t = saturate( -n.z );
-	n.x += n.x >= 0.0f ? -t : t;
-	n.y += n.y >= 0.0f ? -t : t;
-	return normalize( n );
+    // https://twitter.com/Stubbesaurus/status/937994790553227264
+    float3 n = float3(oct.x, oct.y, 1.0f - abs(oct.x) - abs(oct.y));
+    float t = saturate(-n.z);
+    n.x += n.x >= 0.0f ? -t : t;
+    n.y += n.y >= 0.0f ? -t : t;
+    return normalize(n);
 }
 
 float2 toPyramid(float3 dir)
 {
-	dir.xy = dir.xy * rcp( abs( dir.x ) + abs( dir.y ) + abs( dir.z ) );
-	float2 uv = float2(dir.x + dir.y, dir.y - dir.x);
-	return mad(uv, 0.5f, 0.5f);
+    dir.xy = dir.xy * rcp(abs(dir.x) + abs(dir.y) + abs(dir.z));
+    float2 uv = float2(dir.x + dir.y, dir.y - dir.x);
+    return mad(uv, 0.5f, 0.5f);
 }
 
 float3 fromPyramid(float2 uv)
 {
-	//uv = uv * 2.0f - 1.0f;
-	//float3 dir;
-	//dir.x = (uv.x - uv.y) / 2.0f;
-	//dir.y = (uv.x + uv.y) / 2.0f;
-	// Simplifies to:
-	float3 dir;
-	dir.x = uv.x - uv.y;
-	dir.y = uv.x + uv.y - 1.0f;
+    //uv = uv * 2.0f - 1.0f;
+    //float3 dir;
+    //dir.x = (uv.x - uv.y) / 2.0f;
+    //dir.y = (uv.x + uv.y) / 2.0f;
+    // Simplifies to:
+    float3 dir;
+    dir.x = uv.x - uv.y;
+    dir.y = uv.x + uv.y - 1.0f;
 
-	dir.z = 1.0f - abs(dir.x) - abs(dir.y);
-	return normalize(dir);
+    dir.z = 1.0f - abs(dir.x) - abs(dir.y);
+    return normalize(dir);
 }
 
 // TODO: Clean these up
 float2 toRectOctahedral(float3 dir)
 {
-	bool isLowerHemisphere = dir.z < 0.0f;
-	float2 pyramid = toPyramid(dir);
-	pyramid.x = isLowerHemisphere ? 1.0f-pyramid.x : pyramid.x; // Mirror X in the lower hemisphere
-	float offset = isLowerHemisphere ? 0.5f : 0.0f;
-	pyramid.x = pyramid.x * 0.5f + offset;
+    bool isLowerHemisphere = dir.z < 0.0f;
+    float2 pyramid = toPyramid(dir);
+    pyramid.x = isLowerHemisphere ? 1.0f - pyramid.x : pyramid.x; // Mirror X in the lower hemisphere
+    float offset = isLowerHemisphere ? 0.5f : 0.0f;
+    pyramid.x = pyramid.x * 0.5f + offset;
 
-	return pyramid;
+    return pyramid;
 }
 
 float3 fromRectOctahedral(float2 uv)
 {
-	bool isLowerHemisphere = uv.x >= 0.5f;
-	uv.x *= 2.0f;
-	uv.x -= isLowerHemisphere ? 1.0f : 0.0f;
-	uv.x = isLowerHemisphere ? 1.0f-uv.x : uv.x;
-	float3 dir = fromPyramid(uv);
-	dir.z = isLowerHemisphere ? -dir.z : dir.z;
-	return dir;
+    bool isLowerHemisphere = uv.x >= 0.5f;
+    uv.x *= 2.0f;
+    uv.x -= isLowerHemisphere ? 1.0f : 0.0f;
+    uv.x = isLowerHemisphere ? 1.0f - uv.x : uv.x;
+    float3 dir = fromPyramid(uv);
+    dir.z = isLowerHemisphere ? -dir.z : dir.z;
+    return dir;
 }
 
 int2 wrapSquareOctTexel(int2 texel, int res)
 {
-	// TODO: Can we simplify this?
-    if(texel.y >= res)
+    // TODO: Can we simplify this?
+    if (texel.y >= res)
     {
         texel.y = 2 * res - 1 - texel.y;
         texel.x = res - 1 - texel.x;
     }
-    else if(texel.y < 0)
+    else if (texel.y < 0)
     {
         texel.y = -1-texel.y;
         texel.x = res - 1 - texel.x;
     }
     
-    if(texel.x >= res)
+    if (texel.x >= res)
     {
         texel.x = 2 * res - 1 - texel.x;
         texel.y = res - 1 - texel.y;
     }
-    else if(texel.x < 0)
+    else if (texel.x < 0)
     {
         texel.x = -1-texel.x;
         texel.y = res - 1 - texel.y;
@@ -107,117 +107,182 @@ int2 wrapSquareOctTexel(int2 texel, int res)
 
 uint2 packUnorm(float2 v, uint bits)
 {
-	float maxValue = float((1u << bits) - 1);
-	uint2 u = uint2(round(v * maxValue));
-	return u;
+    float maxValue = float((1u << bits) - 1);
+    uint2 u = uint2(round(v * maxValue));
+    return u;
 }
 
 float2 unpackUnorm(uint2 u, uint bits)
 {
-	float invMaxValue = rcp(float((1u << bits) - 1));
-	return float2(u) * invMaxValue;
+    float invMaxValue = rcp(float((1u << bits) - 1));
+    return float2(u) * invMaxValue;
 }
 
 uint3 packUnorm(float3 v, uint bits)
 {
-	float maxValue = float((1u << bits) - 1);
-	uint3 u = uint3(round(v * maxValue));
-	return u;
+    float maxValue = float((1u << bits) - 1);
+    uint3 u = uint3(round(v * maxValue));
+    return u;
 }
 
 float3 unpackUnorm(uint3 u, uint bits)
 {
-	float invMaxValue = rcp(float((1u << bits) - 1));
-	return float3(u) * invMaxValue;
+    float invMaxValue = rcp(float((1u << bits) - 1));
+    return float3(u) * invMaxValue;
 }
 
-uint packEvenBits16(uint value)
+uint packEvenBits_16(uint value)
 {
-	value &= 0x55555555;
-	value |= (value >> 1);
-	value &= 0x33333333;
-	value |= (value >> 2);
-	value &= 0x0000000F; // Clamp to 15
+    value &= 0x55555555;
+    value |= (value >> 1);
+    value &= 0x33333333;
+    value |= (value >> 2);
+    value &= 0x0000000F; // Clamp to 15
 
-	// Full 16 bit packing ops.
-	/*value &= 0x0F0F0F0F;
+    // Full 16 bit packing ops.
+    /*value &= 0x0F0F0F0F;
 	value |= (value >> 4);
 	value &= 0x00FF00FF;
 	value |= (value >> 8);
 	value &= 0x0000FFFF;*/
 
-	return value;
+    return value;
 }
 
-uint packEvenBits256(uint value)
+uint packEvenBits_256(uint value)
 {
-	value &= 0x55555555;
-	value |= (value >> 1);
-	value &= 0x33333333;
-	value |= (value >> 2);
-	value &= 0x0F0F0F0F;
-	value |= (value >> 4);
-	value &= 0x000000FF;
-	/*value &= 0x00FF00FF;
+    value &= 0x55555555;
+    value |= (value >> 1);
+    value &= 0x33333333;
+    value |= (value >> 2);
+    value &= 0x0F0F0F0F;
+    value |= (value >> 4);
+    value &= 0x000000FF;
+    /*value &= 0x00FF00FF;
 	value |= (value >> 8);
 	value &= 0x0000FFFF;*/
 
-	return value;
+    return value;
 }
 
-uint2 rotatingZCurve16x16(uint index)
+uint2 unpackRotatingZCurve2D_16(uint index)
 {
-	uint2 v;
-	v.x = (index & 0x01)
-		| ((index >> 2) & 0x06)
-		| ((index >> 4) & 0x08); // This line is only necessary for larger than 8x8 blocks.
+    uint2 v;
+    v.x = (index & 0x01)
+        | ((index >> 2) & 0x06)
+        | ((index >> 4) & 0x08); // This line is only necessary for larger than 8x8 blocks.
 
-	v.y = ((index >> 1) & 0x03)
-		| ((index >> 3) & 0x0C);
+    v.y = ((index >> 1) & 0x03)
+        | ((index >> 3) & 0x0C);
 
-	return v;
+    return v;
 }
 
-uint2 zCurve16x16(uint index)
+uint2 unpackZCurve2D_16(uint index)
 {
-	return uint2(packEvenBits16(index), packEvenBits16(index >> 1));
+    return uint2(packEvenBits_16(index), packEvenBits_16(index >> 1));
 }
 
-uint2 zCurve256x256(uint index)
+uint2 unpackZCurve2D_256(uint index)
 {
-	return uint2(packEvenBits256(index), packEvenBits256(index >> 1));
+    return uint2(packEvenBits_256(index), packEvenBits_256(index >> 1));
 }
 
 // Expecting width to be a constant.
 // In case you search: Morton Curve
-uint2 zCurve(uint index, uint width)
+uint2 unpackZCurve2D(uint index, uint width)
 {
-	if(width > 16)
-	{
-		return zCurve256x256(index);
-	}
-	else
-	{
-		return rotatingZCurve16x16(index);
-	}
+    if (width > 16)
+    {
+        return unpackZCurve2D_256(index);
+    }
+    else
+    {
+        return unpackRotatingZCurve2D_16(index);
+    }
+}
+
+uint spreadThirdBits_256(uint bits)
+{
+    // Spread bits recursively by doing:
+    // 012 345 67x xxx xxx xxx xxx xxx
+    // 012 3xx xxx xxx 456 7xx xxx xxx
+    // 01x xxx 23x xxx 45x xxx 67x xxx
+    // 0xx 1xx 2xx 3xx 4xx 5xx 6xx 7xx
+
+    // (Interestingly, octal makes easier masks here)
+
+    bits = ((bits << 8) | bits) & 0x00F00F;
+    bits = ((bits << 4) | bits) & 003030303;
+    bits = ((bits << 2) | bits) & 011111111;
+    return bits;
+}
+
+uint packThirdBits_256(uint bits)
+{
+    bits &= 011111111;
+    bits |= (bits >> 2);
+    bits &= 003030303;
+    bits |= (bits >> 4);
+    bits &= 0x00F00F;
+    bits |= (bits >> 8);
+    bits &= 0xFF; // Clamp to 255
+    return bits;
+}
+
+uint spreadThirdBits_16(uint bits)
+{
+    // Spread bits recursively by doing:
+    // 012 3xx xxx xxx
+    // 01x xxx 23x xxx
+    // 0xx 1xx 2xx 3xx
+
+    // (Interestingly, octal makkes easier masks here)
+    bits = ((bits << 4) | bits) & 003030303;
+    bits = ((bits << 2) | bits) & 011111111;
+    return bits;
+}
+
+uint packThirdBits_16(uint bits)
+{
+    bits &= 011111111;
+    bits |= (bits >> 2);
+    bits &= 003030303;
+    bits |= (bits >> 4);
+    bits &= 0xF; // Clamp to 15
+    return bits;
+}
+
+uint packZCurve3D_256(uint3 indices)
+{
+    return spreadThirdBits_256(indices.x)
+        | (spreadThirdBits_256(indices.y) << 1u)
+        | (spreadThirdBits_256(indices.z) << 2u);
+}
+
+uint packZCurve3D_16(uint3 indices)
+{
+    return spreadThirdBits_16(indices.x)
+        | (spreadThirdBits_16(indices.y) << 1u)
+        | (spreadThirdBits_16(indices.z) << 2u);
 }
 
 uint packRGBA(float4 v)
 {
-	return (uint)(saturate(v.r) * 255.0f)
-		| ((uint)(saturate(v.g) * 255.0f) << 8)
-		| ((uint)(saturate(v.b) * 255.0f) << 16)
-		| ((uint)(saturate(v.a) * 255.0f) << 24);
+    return (uint)(saturate(v.r) * 255.0f)
+        | ((uint)(saturate(v.g) * 255.0f) << 8)
+        | ((uint)(saturate(v.b) * 255.0f) << 16)
+        | ((uint)(saturate(v.a) * 255.0f) << 24);
 }
 
 float4 unpackRGBA(uint rgba)
 {
-	float4 output = (float4)0;
-	output.r = (float)(rgba & 0xFF) / 255.0f;
-	output.g = (float)((rgba >> 8) & 0xFF) / 255.0f;
-	output.b = (float)((rgba >> 16) & 0xFF) / 255.0f;
-	output.a = (float)((rgba >> 24) & 0xFF) / 255.0f;
-	return output;
+    float4 output = (float4)0;
+    output.r = (float)(rgba & 0xFF) / 255.0f;
+    output.g = (float)((rgba >> 8) & 0xFF) / 255.0f;
+    output.b = (float)((rgba >> 16) & 0xFF) / 255.0f;
+    output.a = (float)((rgba >> 24) & 0xFF) / 255.0f;
+    return output;
 }
 
 #endif // IB_ENCODINGS_H

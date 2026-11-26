@@ -1,4 +1,5 @@
 #include <ib_math.hsh>
+#include <ib_encodings.hsh>
 
 struct Transform
 {
@@ -86,8 +87,62 @@ float dda(float3 rayDir, float3 invRayDir, inout float3 voxel, inout float3 rayT
     return minDist;
 }
 
+
 [[vk::binding(0)]] RWTexture2D<float4> Output;
 [[vk::binding(1)]] ConstantBuffer<VoxelTraceConstants> Constants;
+[[vk::binding(2)]] StructuredBuffer<uint> VoxelPageBitmasks;
+[[vk::binding(3)]] StructuredBuffer<uint> VoxelPageBrickIndirection;
+[[vk::binding(4)]] StructuredBuffer<uint2> VoxelBrickBitmasks;
+
+bool isBrickValid(uint3 brickId)
+{
+    uint brickIndex = packZCurve3D_256(brickId);
+    uint arrIndex = brickIndex >> 5u;
+    uint bitIndex = brickIndex & 31u;
+    return (VoxelPageBitmasks[arrIndex] & (1u << bitIndex)) != 0;
+}
+
+struct VoxelHit
+{
+    float3 VoxelID;
+    float HitT;
+};
+
+VoxelHit traceBricks(float3 origin, float3 viewDir, float brickWidth, float volumeWidth)
+{
+    // Traversal is much simpler in unit space where one voxel is one unit wide.
+    // TODO: Also handle our page's origin
+    float3 rescaledOrigin = origin / brickWidth;
+
+    float3 voxelEdge = select(viewDir > 0.0f, 1.0f, 0.0f);
+    float3 distanceToEdge = voxelEdge - frac(rescaledOrigin);
+    float3 rayTracking = select(viewDir == 0.0f, FltMax, distanceToEdge / viewDir);
+    float3 localBrick = floor(rescaledOrigin);
+
+    VoxelHit hit = (VoxelHit)0;
+    hit.HitT = -1.0f;
+
+    while (true)
+    {
+        float rayT = dda(viewDir, 1.0f / viewDir, localBrick, rayTracking);
+        if (any(localBrick < 0.0f) || any(localBrick >= volumeWidth))
+        {
+            break;
+        }
+
+        uint3 intBrickId = (uint3)localBrick;
+        bool hitBrick = isBrickValid(intBrickId);
+        if (hitBrick)
+        {
+            hit.VoxelID = localBrick;
+            // Make sure to rescale our hit to world scale
+            hit.HitT = rayT * brickWidth;
+            break;
+        }
+    }
+
+    return hit;
+}
 
 [numthreads(8, 8, 1)]
 void CS(uint2 dispatchThreadID : SV_DispatchThreadID)
@@ -103,40 +158,35 @@ void CS(uint2 dispatchThreadID : SV_DispatchThreadID)
     float3 viewDir = normalize(farPosWorld);
 
     float3 origin = Constants.ViewToWorld.Position;
-    float3 voxelEdge = select(viewDir > 0.0f, 1.0f, 0.0f);
-    float3 distanceToEdge = voxelEdge - frac(origin);
-    float3 rayTracking = select(viewDir == 0.0f, FltMax, distanceToEdge / viewDir);
 
-    float3 voxel = floor(origin);
-    for (int i = 0; i < 64; i++)
+    // TODO: Change 64 to page width
+    // TODO: Add max step count?
+    float brickWidth = 2.0f;
+    VoxelHit brickHit = traceBricks(origin, viewDir, brickWidth, 64.0f);
+    if (brickHit.HitT >= 0.0f)
     {
-        float rayT = dda(viewDir, 1.0f / viewDir, voxel, rayTracking);
-        int3 intVoxel = (int3)voxel;
-        if (intVoxel.y == -5 && intVoxel.x % 2 && intVoxel.z % 2)
+        float3 voxelOrigin = (brickHit.VoxelID + 0.5f) * brickWidth;
+
+        float3 hitPos = origin + brickHit.HitT * viewDir;
+        float3 voxelToHit = hitPos - voxelOrigin;
+
+        float maxComponent = max(abs(voxelToHit.x), max(abs(voxelToHit.y), abs(voxelToHit.z)));
+        float3 normal;
+        if (abs(voxelToHit.x) == maxComponent)
         {
-            float3 voxelOrigin = voxel + 0.5f;
-
-            float3 hitPos = origin + rayT * viewDir;
-            float3 voxelToHit = hitPos - voxelOrigin;
-
-            float maxComponent = max(abs(voxelToHit.x), max(abs(voxelToHit.y), abs(voxelToHit.z)));
-            float3 normal;
-            if (abs(voxelToHit.x) == maxComponent)
-            {
-                normal = float3(sign(voxelToHit.x), 0.0f, 0.0f);
-            }
-            else if (abs(voxelToHit.y) == maxComponent)
-            {
-                normal = float3(0.0f, sign(voxelToHit.y), 0.0f);
-            }
-            else if (abs(voxelToHit.z) == maxComponent)
-            {
-                normal = float3(0.0f, 0.0f, sign(voxelToHit.z));
-            }
-
-            Output[dispatchThreadID] = float4(normal, 1.0f);
-            return;
+            normal = float3(sign(voxelToHit.x), 0.0f, 0.0f);
         }
+        else if (abs(voxelToHit.y) == maxComponent)
+        {
+            normal = float3(0.0f, sign(voxelToHit.y), 0.0f);
+        }
+        else if (abs(voxelToHit.z) == maxComponent)
+        {
+            normal = float3(0.0f, 0.0f, sign(voxelToHit.z));
+        }
+
+        Output[dispatchThreadID] = float4(normal, 1.0f);
+        return;
     }
 
     Output[dispatchThreadID] = float4(viewDir, 1.0f);

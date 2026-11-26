@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 // Include options:
-// #define IB_DEBUG
+#define IB_DEBUG 1
 
 #include "ib_util.h"
 #include "ib_allocator.h"
